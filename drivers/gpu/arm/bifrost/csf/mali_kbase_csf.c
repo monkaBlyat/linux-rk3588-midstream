@@ -1990,6 +1990,7 @@ static int handle_oom_event(struct kbase_context *const kctx,
 				new_chunk_ptr & 0xFFFFFFFF);
 	kbase_csf_firmware_cs_input(stream, CS_TILER_HEAP_END_HI,
 				new_chunk_ptr >> 32);
+	dev_info(kctx->kbdev->dev, "vt_start %x vt_end %x frag_end %x new_chunck_ptr %llx\n", vt_start, vt_end, frag_end, new_chunk_ptr);
 
 	return 0;
 }
@@ -2480,6 +2481,9 @@ static void process_cs_interrupts(struct kbase_queue_group *const group,
 				kbase_csf_firmware_cs_output(stream, CS_ACK);
 			struct workqueue_struct *wq = group->kctx->csf.wq;
 
+			pr_info("%s:%i CS %d cs_req %x cs_ack %x\n", __func__, __LINE__, i,
+				kbase_csf_firmware_cs_input_read(stream, CS_REQ),
+				kbase_csf_firmware_cs_input_read(stream, CS_ACK));
 			if ((cs_req & CS_REQ_EXCEPTION_MASK) ^
 			    (cs_ack & CS_ACK_EXCEPTION_MASK)) {
 				KBASE_KTRACE_ADD_CSF_GRP_Q(kbdev, CSI_FAULT_INTERRUPT, group, queue, cs_req ^ cs_ack);
@@ -2586,6 +2590,7 @@ static void process_csg_interrupts(struct kbase_device *const kbdev,
 	ack = kbase_csf_firmware_csg_output(ginfo, CSG_ACK);
 	irqreq = kbase_csf_firmware_csg_output(ginfo, CSG_IRQ_REQ);
 	irqack = kbase_csf_firmware_csg_input_read(ginfo, CSG_IRQ_ACK);
+	pr_info("%s:%i csg req %x ack %x cs reqs %x acks %x\n", __func__, __LINE__, req, ack, irqreq, irqack);
 
 	/* There may not be any pending CSG/CS interrupts to process */
 	if ((req == ack) && (irqreq == irqack))

@@ -1316,6 +1316,7 @@ struct kbase_csf_device {
 	struct kobject *fw_cfg_kobj;
 	struct kbase_csf_trace_buffers firmware_trace_buffers;
 	void *shared_interface;
+	void *iologger_interface;
 	struct rb_root shared_reg_rbtree;
 	struct file *db_filp;
 	u32 db_file_offsets;

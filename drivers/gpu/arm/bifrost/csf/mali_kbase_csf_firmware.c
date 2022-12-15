@@ -50,6 +50,7 @@
 #include <mmu/mali_kbase_mmu.h>
 #include <asm/arch_timer.h>
 #include <linux/delay.h>
+#include <linux/debugfs.h>
 
 #define MALI_MAX_FIRMWARE_NAME_LEN ((size_t)20)
 
@@ -206,6 +207,32 @@ static int setup_shared_iface_static_region(struct kbase_device *kbdev)
 	return ret;
 }
 
+static int setup_iologger_iface_static_region(struct kbase_device *kbdev)
+{
+	struct kbase_csf_firmware_interface *interface =
+		kbdev->csf.iologger_interface;
+	struct kbase_va_region *reg;
+	int ret = -ENOMEM;
+
+	if (!interface)
+		return -EINVAL;
+
+	reg = kbase_alloc_free_region(&kbdev->csf.shared_reg_rbtree, 0x100000 >> PAGE_SHIFT,
+			interface->num_pages_aligned, KBASE_REG_ZONE_MCU_SHARED);
+	if (reg) {
+		mutex_lock(&kbdev->csf.reg_lock);
+		ret = kbase_add_va_region_rbtree(kbdev, reg,
+				interface->virtual, interface->num_pages_aligned, 1);
+		mutex_unlock(&kbdev->csf.reg_lock);
+		if (ret)
+			kfree(reg);
+		else
+			reg->flags &= ~KBASE_REG_FREE;
+	}
+
+	return ret;
+}
+
 static int wait_mcu_status_value(struct kbase_device *kbdev, u32 val)
 {
 	u32 max_loops = CSF_MAX_FW_STOP_LOOPS;
@@ -248,6 +275,33 @@ static void stop_csf_firmware(struct kbase_device *kbdev)
 	wait_for_firmware_stop(kbdev);
 }
 
+void kbase_csf_print_logs(struct kbase_device *kbdev)
+{
+	if (kbdev->csf.iologger_interface) {
+		struct kbase_csf_firmware_interface *interface = kbdev->csf.iologger_interface;
+		const char *messages = interface->kernel_map;
+		u32 logger_insert_offs = min_t(u32, *((u32 *)(interface->kernel_map + 0xff000)), 0xff000);
+		u32 offset, message_start = 0;
+		char *tmp;
+
+		tmp = kzalloc(logger_insert_offs + 1, GFP_KERNEL);
+		if (!tmp)
+			return;
+
+		memcpy(tmp, messages, logger_insert_offs);
+		for (offset = 0; offset < logger_insert_offs; offset++) {
+			if (tmp[offset] == '\n')
+				tmp[offset] = '\0';
+
+			if (tmp[offset] == '\0') {
+				pr_info("%s", &tmp[message_start]);
+				message_start = offset + 1;
+			}
+		}
+
+		kfree(tmp);
+	}
+}
 static void wait_for_firmware_boot(struct kbase_device *kbdev)
 {
 	long wait_timeout;
@@ -265,8 +319,10 @@ static void wait_for_firmware_boot(struct kbase_device *kbdev)
 	remaining = wait_event_timeout(kbdev->csf.event_wait,
 			kbdev->csf.interrupt_received == true, wait_timeout);
 
-	if (!remaining)
+	if (!remaining) {
 		dev_err(kbdev->dev, "Timed out waiting for fw boot completion");
+		kbase_csf_print_logs(kbdev);
+	}
 
 	kbdev->csf.interrupt_received = false;
 }
@@ -715,6 +771,12 @@ static int parse_memory_setup_entry(struct kbase_device *kbdev,
 	if (virtual_start == (KBASE_REG_ZONE_MCU_SHARED_BASE << PAGE_SHIFT))
 		kbdev->csf.shared_interface = interface;
 
+	pr_info("%s:%i iface %s %x-%x\n", __func__, __LINE__, name ? name : "unknown", virtual_start, virtual_end);
+	if (virtual_start == 0x4100000) {
+		pr_info("%s:%i\n", __func__, __LINE__);
+		kbdev->csf.iologger_interface = interface;
+	}
+
 	list_add(&interface->node, &kbdev->csf.firmware_interfaces);
 
 	if (!reuse_pages) {
@@ -838,6 +900,8 @@ static int load_firmware_entry(struct kbase_device *kbdev, const struct kbase_cs
 	 */
 	const bool updatable = entry_update(header);
 	const u32 *entry = (void *)(fw->data + offset);
+
+	pr_info("%s:%i\n", __func__, __LINE__);
 
 	if ((offset % sizeof(*entry)) || (size % sizeof(*entry))) {
 		dev_err(kbdev->dev, "Firmware entry isn't 32 bit aligned, offset=0x%x size=0x%x\n",
@@ -1952,6 +2016,37 @@ int kbase_csf_firmware_early_init(struct kbase_device *kbdev)
 	return 0;
 }
 
+ssize_t debugfs_read_csf_io_logs(struct file *file, char __user *user_buf,
+				 size_t count, loff_t *ppos)
+{
+	struct dentry *dentry = file->f_path.dentry;
+	struct kbase_device *kbdev;
+	struct kbase_csf_firmware_interface *interface;
+	char *str;
+	u32 len;
+	ssize_t ret;
+
+	ret = debugfs_file_get(dentry);
+	if (unlikely(ret))
+		return ret;
+
+	kbdev = file->private_data;
+	interface = kbdev->csf.iologger_interface;
+
+	len = min_t(u32, *((u32 *)(interface->kernel_map + 0xff000)), 0xff000);
+	str = interface->kernel_map;
+
+	debugfs_file_put(dentry);
+
+	return simple_read_from_buffer(user_buf, count, ppos, str, len);
+}
+
+static const struct file_operations fops_csf_io_logs = {
+	.read =		debugfs_read_csf_io_logs,
+	.open =		simple_open,
+	.llseek =	default_llseek,
+};
+
 int kbase_csf_firmware_init(struct kbase_device *kbdev)
 {
 	const struct firmware *firmware = NULL;
@@ -1963,6 +2058,7 @@ int kbase_csf_firmware_init(struct kbase_device *kbdev)
 	u32 entry_offset;
 	int ret;
 
+	pr_info("%s:%i\n", __func__, __LINE__);
 	lockdep_assert_held(&kbdev->fw_load_lock);
 
 	if (WARN_ON((kbdev->as_free & MCU_AS_BITMASK) == 0))
@@ -2072,6 +2168,23 @@ int kbase_csf_firmware_init(struct kbase_device *kbdev)
 			dev_err(kbdev->dev, "Failed to insert a region for shared iface entry parsed from fw image\n");
 			goto err_out;
 		}
+	}
+
+	if (kbdev->csf.iologger_interface) {
+		struct kbase_csf_firmware_interface *interface =
+			kbdev->csf.iologger_interface;
+
+		ret = setup_iologger_iface_static_region(kbdev);
+		if (ret) {
+			dev_err(kbdev->dev, "Failed to insert a region for iologger shared iface entry parsed from fw image\n");
+			goto err_out;
+		}
+
+		pr_info("%s:%i interface->kernel_map %px\n", __func__, __LINE__, interface->kernel_map);
+		debugfs_create_file("csf_io_logs", 0644, kbdev->mali_debugfs_directory,
+				    kbdev, &fops_csf_io_logs);
+		debugfs_create_x32("csf_io_log_offset", 0644, kbdev->mali_debugfs_directory,
+				   interface->kernel_map + 0xff000);
 	}
 
 	ret = kbase_csf_firmware_trace_buffers_init(kbdev);

@@ -221,6 +221,8 @@ static int create_chunk(struct kbase_csf_tiler_heap *const heap,
 		}
 	}
 
+	dev_info(kctx->kbdev->dev, "heap ctx VA %llx chunk VA %llx-%llx\n", heap->gpu_va, chunk->gpu_va, chunk->gpu_va + (nr_pages << PAGE_SHIFT));
+
 	if (unlikely(err)) {
 		kfree(chunk);
 	} else {
@@ -420,10 +422,13 @@ int kbase_csf_tiler_heap_init(struct kbase_context *const kctx,
 	struct kbase_csf_tiler_heap *heap = NULL;
 	struct kbase_csf_heap_context_allocator *const ctx_alloc =
 		&kctx->csf.tiler_heaps.ctx_alloc;
+	u32 init_chunks = initial_chunks;
+	u32 chunk_sz = chunk_size;
 
-	dev_dbg(kctx->kbdev->dev,
-		"Creating a tiler heap with %u chunks (limit: %u) of size %u\n",
-		initial_chunks, max_chunks, chunk_size);
+//	init_chunks = 1;
+	dev_info(kctx->kbdev->dev,
+		"Creating a tiler heap with %u chunks (limit: %u) of size %u target_in_flight %d\n",
+		init_chunks, max_chunks, chunk_size, target_in_flight);
 
 	if (!kbase_mem_allow_alloc(kctx))
 		return -EINVAL;
@@ -451,7 +456,7 @@ int kbase_csf_tiler_heap_init(struct kbase_context *const kctx,
 	}
 
 	heap->kctx = kctx;
-	heap->chunk_size = chunk_size;
+	heap->chunk_size = chunk_sz;
 	heap->max_chunks = max_chunks;
 	heap->target_in_flight = target_in_flight;
 	INIT_LIST_HEAD(&heap->chunks_list);
@@ -463,7 +468,7 @@ int kbase_csf_tiler_heap_init(struct kbase_context *const kctx,
 			"Failed to allocate a tiler heap context");
 		err = -ENOMEM;
 	} else {
-		err = create_initial_chunks(heap, initial_chunks);
+		err = create_initial_chunks(heap, init_chunks);
 		if (unlikely(err))
 			kbase_csf_heap_context_allocator_free(ctx_alloc, heap->gpu_va);
 	}
@@ -607,6 +612,7 @@ int kbase_csf_tiler_heap_alloc_new_chunk(struct kbase_context *kctx,
 	struct kbase_csf_tiler_heap *heap;
 	int err = -EINVAL;
 
+	dev_info(kctx->kbdev->dev, "Alloc tiler heap chunk\n");
 	mutex_lock(&kctx->csf.tiler_heaps.lock);
 
 	heap = find_tiler_heap(kctx, gpu_heap_va);

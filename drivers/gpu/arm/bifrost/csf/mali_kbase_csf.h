@@ -465,4 +465,6 @@ static inline u64 kbase_csf_ktrace_gpu_cycle_cnt(struct kbase_device *kbdev)
 	return 0;
 #endif
 }
+
+void kbase_csf_print_logs(struct kbase_device *kbdev);
 #endif /* _KBASE_CSF_H_ */

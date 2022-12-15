@@ -2168,11 +2168,14 @@ void kbase_pm_reset_complete(struct kbase_device *kbdev)
 #define PM_TIMEOUT_MS (5000) /* 5s */
 #endif
 
+void kbase_csf_print_logs(struct kbase_device *kbdev);
+
 static void kbase_pm_timed_out(struct kbase_device *kbdev)
 {
 	unsigned long flags;
 
 	dev_err(kbdev->dev, "Power transition timed out unexpectedly\n");
+	kbase_csf_print_logs(kbdev);
 #if !MALI_USE_CSF
 	CSTD_UNUSED(flags);
 	dev_err(kbdev->dev, "Desired state :\n");

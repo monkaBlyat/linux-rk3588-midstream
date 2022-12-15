@@ -1501,6 +1501,8 @@ static void program_cs(struct kbase_device *kbdev,
 			CS_REQ_IDLE_EMPTY_MASK | CS_REQ_IDLE_SYNC_WAIT_MASK,
 			CS_REQ_IDLE_EMPTY_MASK | CS_REQ_IDLE_SYNC_WAIT_MASK);
 
+	kbase_csf_firmware_cs_input_mask(stream, CS_REQ,
+			CS_REQ_EXTRACT_EVENT_MASK, CS_REQ_EXTRACT_EVENT_MASK);
 	/* Set state to START/STOP */
 	kbase_csf_firmware_cs_input_mask(stream, CS_REQ,
 		queue->enabled ? CS_REQ_STATE_START : CS_REQ_STATE_STOP,
@@ -2656,6 +2658,8 @@ static int term_group_sync(struct kbase_queue_group *group)
 			 kbase_backend_get_cycle_cnt(kbdev), kbdev->csf.fw_timeout_ms,
 			 group->handle, group->kctx->tgid,
 			 group->kctx->id, group->csg_nr);
+
+		kbase_csf_print_logs(kbdev);
 		if (kbase_prepare_to_reset_gpu(kbdev, RESET_FLAGS_NONE))
 			kbase_reset_gpu(kbdev);
 
@@ -3296,6 +3300,7 @@ static void wait_csg_slots_start(struct kbase_device *kbdev)
 				 kbdev->csf.fw_timeout_ms,
 				 num_groups, slot_mask);
 
+			kbase_csf_print_logs(kbdev);
 			if (kbase_prepare_to_reset_gpu(kbdev, RESET_FLAGS_NONE))
 				kbase_reset_gpu(kbdev);
 			break;

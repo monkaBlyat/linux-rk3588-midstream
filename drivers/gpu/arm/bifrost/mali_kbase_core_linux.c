@@ -432,7 +432,7 @@ static struct kbase_device *to_kbase_device(struct device *dev)
 
 int assign_irqs(struct kbase_device *kbdev)
 {
-	static const char *const irq_names[] = { "JOB", "MMU", "GPU" };
+	static const char *const irq_names[] = { "job", "mmu", "gpu" };
 	struct platform_device *pdev;
 	int i;
 
@@ -4498,7 +4498,7 @@ int power_control_init(struct kbase_device *kbdev)
 	unsigned int i;
 #if defined(CONFIG_REGULATOR)
 	static const char * const regulator_names[] = {
-		"mali", "mem"
+		"mali", "sram"
 	};
 #endif /* CONFIG_REGULATOR */
 
