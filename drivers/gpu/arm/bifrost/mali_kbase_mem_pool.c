@@ -386,7 +386,7 @@ int kbase_mem_pool_init(struct kbase_mem_pool *pool,
 	 * struct shrinker does not define batch
 	 */
 	pool->reclaim.batch = 0;
-	register_shrinker(&pool->reclaim);
+	register_shrinker(&pool->reclaim, "mali_kbase_mem_pool");
 
 	pool_dbg(pool, "initialized\n");
 

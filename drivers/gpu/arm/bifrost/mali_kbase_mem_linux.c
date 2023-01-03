@@ -770,7 +770,7 @@ int kbase_mem_evictable_init(struct kbase_context *kctx)
 	 * struct shrinker does not define batch
 	 */
 	kctx->reclaim.batch = 0;
-	register_shrinker(&kctx->reclaim);
+	register_shrinker(&kctx->reclaim, "mali_kbase");
 	return 0;
 }
 
@@ -3179,7 +3179,7 @@ static void kbasep_add_mm_counter(struct mm_struct *mm, int member, long value)
 	 * we inline here the equivalent of 'add_mm_counter()' from linux
 	 * kernel V5.4.0~8.
 	 */
-	atomic_long_add(value, &mm->rss_stat.count[member]);
+	percpu_counter_add(&mm->rss_stat[member], value);
 #else
 	add_mm_counter(mm, member, value);
 #endif

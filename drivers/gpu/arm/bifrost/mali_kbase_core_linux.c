@@ -4498,7 +4498,7 @@ int power_control_init(struct kbase_device *kbdev)
 	unsigned int i;
 #if defined(CONFIG_REGULATOR)
 	static const char * const regulator_names[] = {
-		"mali", "sram"
+		"mali", "sram", NULL,
 	};
 #endif /* CONFIG_REGULATOR */
 
@@ -4515,7 +4515,7 @@ int power_control_init(struct kbase_device *kbdev)
 	 * Any other error is ignored and the driver will continue
 	 * operating with a partial initialization of regulators.
 	 */
-	for (i = 0; i < ARRAY_SIZE(regulator_names); i++) {
+	for (i = 0; regulator_names[i]; i++) {
 		kbdev->regulators[i] = regulator_get_optional(kbdev->dev,
 			regulator_names[i]);
 		if (IS_ERR_OR_NULL(kbdev->regulators[i])) {
@@ -4582,8 +4582,7 @@ int power_control_init(struct kbase_device *kbdev)
 	defined(CONFIG_REGULATOR))
 	if (kbdev->nr_regulators > 0) {
 		kbdev->opp_table =
-			dev_pm_opp_set_regulators(kbdev->dev, regulator_names,
-						  kbdev->nr_regulators);
+			dev_pm_opp_set_regulators(kbdev->dev, regulator_names);
 		if (IS_ERR(kbdev->opp_table)) {
 			dev_err(kbdev->dev, "Failed to set regulators\n");
 			return 0;
