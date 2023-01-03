@@ -792,7 +792,7 @@ static int rockchip_init_pvtpll_info(struct rockchip_opp_info *info)
 		info->opp_table[i].u_volt = opp->supplies[0].u_volt;
 		info->opp_table[i].u_volt_min = opp->supplies[0].u_volt_min;
 		info->opp_table[i].u_volt_max = opp->supplies[0].u_volt_max;
-		info->opp_table[i++].rate = opp->rate;
+		info->opp_table[i++].rate = opp->rates[0];
 	}
 	mutex_unlock(&opp_table->lock);
 
@@ -1237,7 +1237,7 @@ static int rockchip_adjust_opp_by_irdrop(struct device *dev,
 		if (!irdrop_table) {
 			delta_irdrop = 0;
 		} else {
-			opp_rate = opp->rate / 1000000;
+			opp_rate = opp->rates[0] / 1000000;
 			board_irdrop = -EINVAL;
 			for (i = 0; irdrop_table[i].sel != SEL_TABLE_END; i++) {
 				if (opp_rate >= irdrop_table[i].min)
@@ -1257,7 +1257,7 @@ static int rockchip_adjust_opp_by_irdrop(struct device *dev,
 			else
 				opp->supplies[0].u_volt_max = max_volt;
 			if (!reach_max_volt)
-				tmp_safe_rate = opp->rate;
+				tmp_safe_rate = opp->rates[0];
 			if (opp->supplies[0].u_volt == max_volt)
 				reach_max_volt = true;
 		} else {
@@ -1266,8 +1266,8 @@ static int rockchip_adjust_opp_by_irdrop(struct device *dev,
 			opp->supplies[0].u_volt_max = max_volt;
 		}
 		if (max_rate)
-			*max_rate = opp->rate;
-		if (safe_rate && tmp_safe_rate != opp->rate)
+			*max_rate = opp->rates[0];
+		if (safe_rate && tmp_safe_rate != opp->rates[0])
 			*safe_rate = tmp_safe_rate;
 	}
 	mutex_unlock(&opp_table->lock);
@@ -1332,8 +1332,8 @@ static int rockchip_adjust_opp_table(struct device *dev,
 			ret = PTR_ERR(opp);
 			goto out;
 		}
-		if (opp->rate > scale_rate)
-			dev_pm_opp_disable(dev, opp->rate);
+		if (opp->rates[0] > scale_rate)
+			dev_pm_opp_disable(dev, opp->rates[0]);
 		dev_pm_opp_put(opp);
 	}
 out:
