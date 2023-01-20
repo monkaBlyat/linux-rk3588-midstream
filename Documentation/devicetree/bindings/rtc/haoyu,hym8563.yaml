@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: GPL-2.0
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
 %YAML 1.2
 ---
 $id: http://devicetree.org/schemas/rtc/haoyu,hym8563.yaml#
@@ -24,6 +24,7 @@ properties:
 
   clock-output-names:
     description: From common clock binding to override the default output clock name.
+    maxItems: 1
 
   wakeup-source:
     description: Enables wake up of host system on alarm.
@@ -49,7 +50,7 @@ examples:
         rtc@51 {
             compatible = "haoyu,hym8563";
             reg = <0x51>;
-
             interrupts = <13 IRQ_TYPE_EDGE_FALLING>;
+            #clock-cells = <0>;
         };
     };

@@ -183,6 +183,19 @@ properties:
       snps,rx-sched-wsp:
         type: boolean
         description: Weighted Strict priority
+    allOf:
+      - if:
+          required:
+            - snps,rx-sched-sp
+        then:
+          properties:
+            snps,rx-sched-wsp: false
+      - if:
+          required:
+            - snps,rx-sched-wsp
+        then:
+          properties:
+            snps,rx-sched-sp: false
     patternProperties:
       "^queue[0-9]$":
         description: Each subnode represents a queue.
@@ -215,6 +228,65 @@ properties:
           snps,priority:
             $ref: /schemas/types.yaml#/definitions/uint32
             description: Bitmask of the tagged frames priorities assigned to the queue
+        allOf:
+          - if:
+              required:
+                - snps,dcb-algorithm
+            then:
+              properties:
+                snps,avb-algorithm: false
+          - if:
+              required:
+                - snps,avb-algorithm
+            then:
+              properties:
+                snps,dcb-algorithm: false
+          - if:
+              required:
+                - snps,route-avcp
+            then:
+              properties:
+                snps,route-ptp: false
+                snps,route-dcbcp: false
+                snps,route-up: false
+                snps,route-multi-broad: false
+          - if:
+              required:
+                - snps,route-ptp
+            then:
+              properties:
+                snps,route-avcp: false
+                snps,route-dcbcp: false
+                snps,route-up: false
+                snps,route-multi-broad: false
+          - if:
+              required:
+                - snps,route-dcbcp
+            then:
+              properties:
+                snps,route-avcp: false
+                snps,route-ptp: false
+                snps,route-up: false
+                snps,route-multi-broad: false
+          - if:
+              required:
+                - snps,route-up
+            then:
+              properties:
+                snps,route-avcp: false
+                snps,route-ptp: false
+                snps,route-dcbcp: false
+                snps,route-multi-broad: false
+          - if:
+              required:
+                - snps,route-multi-broad
+            then:
+              properties:
+                snps,route-avcp: false
+                snps,route-ptp: false
+                snps,route-dcbcp: false
+                snps,route-up: false
+        additionalProperties: false
     additionalProperties: false
 
   snps,mtl-tx-config:
@@ -242,6 +314,39 @@ properties:
       snps,tx-sched-sp:
         type: boolean
         description: Strict priority
+    allOf:
+      - if:
+          required:
+            - snps,tx-sched-wrr
+        then:
+          properties:
+            snps,tx-sched-wfq: false
+            snps,tx-sched-dwrr: false
+            snps,tx-sched-sp: false
+      - if:
+          required:
+            - snps,tx-sched-wfq
+        then:
+          properties:
+            snps,tx-sched-wrr: false
+            snps,tx-sched-dwrr: false
+            snps,tx-sched-sp: false
+      - if:
+          required:
+            - snps,tx-sched-dwrr
+        then:
+          properties:
+            snps,tx-sched-wrr: false
+            snps,tx-sched-wfq: false
+            snps,tx-sched-sp: false
+      - if:
+          required:
+            - snps,tx-sched-sp
+        then:
+          properties:
+            snps,tx-sched-wrr: false
+            snps,tx-sched-wfq: false
+            snps,tx-sched-dwrr: false
     patternProperties:
       "^queue[0-9]$":
         description: Each subnode represents a queue.
@@ -260,16 +365,16 @@ properties:
               Queue 0 is reserved for legacy traffic and so no AVB is
               available in this queue.
           snps,send_slope:
-            type: boolean
+            $ref: /schemas/types.yaml#/definitions/uint32
             description: enable Low Power Interface
           snps,idle_slope:
-            type: boolean
+            $ref: /schemas/types.yaml#/definitions/uint32
             description: unlock on WoL
           snps,high_credit:
-            type: boolean
+            $ref: /schemas/types.yaml#/definitions/uint32
             description: max write outstanding req. limit
           snps,low_credit:
-            type: boolean
+            $ref: /schemas/types.yaml#/definitions/uint32
             description: max read outstanding req. limit
           snps,priority:
             $ref: /schemas/types.yaml#/definitions/uint32
@@ -278,6 +383,21 @@ properties:
               When a PFC frame is received with priorities matching the bitmask,
               the queue is blocked from transmitting for the pause time specified
               in the PFC frame.
+        allOf:
+          - if:
+              required:
+                - snps,dcb-algorithm
+            then:
+              properties:
+                snps,avb-algorithm: false
+          - if:
+              required:
+                - snps,avb-algorithm
+            then:
+              properties:
+                snps,dcb-algorithm: false
+                snps,weight: false
+        additionalProperties: false
     additionalProperties: false
 
   snps,reset-gpio:
@@ -525,41 +645,6 @@ additionalProperties: true
 
 examples:
   - |
-    stmmac_axi_setup: stmmac-axi-config {
-        snps,wr_osr_lmt = <0xf>;
-        snps,rd_osr_lmt = <0xf>;
-        snps,blen = <256 128 64 32 0 0 0>;
-    };
-
-    mtl_rx_setup: rx-queues-config {
-        snps,rx-queues-to-use = <1>;
-        snps,rx-sched-sp;
-        queue0 {
-            snps,dcb-algorithm;
-            snps,map-to-dma-channel = <0x0>;
-            snps,priority = <0x0>;
-        };
-    };
-
-    mtl_tx_setup: tx-queues-config {
-        snps,tx-queues-to-use = <2>;
-        snps,tx-sched-wrr;
-        queue0 {
-            snps,weight = <0x10>;
-            snps,dcb-algorithm;
-            snps,priority = <0x0>;
-        };
-
-        queue1 {
-            snps,avb-algorithm;
-            snps,send_slope = <0x1000>;
-            snps,idle_slope = <0x1000>;
-            snps,high_credit = <0x3E800>;
-            snps,low_credit = <0xFFC18000>;
-            snps,priority = <0x1>;
-        };
-    };
-
     gmac0: ethernet@e0800000 {
         compatible = "snps,dwxgmac-2.10", "snps,dwxgmac";
         reg = <0xe0800000 0x8000>;
@@ -578,6 +663,42 @@ examples:
         snps,axi-config = <&stmmac_axi_setup>;
         snps,mtl-rx-config = <&mtl_rx_setup>;
         snps,mtl-tx-config = <&mtl_tx_setup>;
+
+        stmmac_axi_setup: stmmac-axi-config {
+            snps,wr_osr_lmt = <0xf>;
+            snps,rd_osr_lmt = <0xf>;
+            snps,blen = <256 128 64 32 0 0 0>;
+        };
+
+        mtl_rx_setup: rx-queues-config {
+            snps,rx-queues-to-use = <1>;
+            snps,rx-sched-sp;
+            queue0 {
+                snps,dcb-algorithm;
+                snps,map-to-dma-channel = <0x0>;
+                snps,priority = <0x0>;
+            };
+        };
+
+        mtl_tx_setup: tx-queues-config {
+            snps,tx-queues-to-use = <2>;
+            snps,tx-sched-wrr;
+            queue0 {
+                snps,weight = <0x10>;
+                snps,dcb-algorithm;
+                snps,priority = <0x0>;
+            };
+
+            queue1 {
+                snps,avb-algorithm;
+                snps,send_slope = <0x1000>;
+                snps,idle_slope = <0x1000>;
+                snps,high_credit = <0x3E800>;
+                snps,low_credit = <0xFFC18000>;
+                snps,priority = <0x1>;
+            };
+        };
+
         mdio0 {
             #address-cells = <1>;
             #size-cells = <0>;

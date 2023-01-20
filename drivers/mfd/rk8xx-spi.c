@@ -3,8 +3,10 @@
  * Rockchip RK806 Core (SPI) driver
  *
  * Copyright (c) 2021 Rockchip Electronics Co., Ltd.
+ * Copyright (c) 2023 Collabora Ltd.
  *
  * Author: Xu Shengfei <xsf@rock-chips.com>
+ * Author: Sebastian Reichel <sebastian.reichel@collabora.com>
  */
 
 #include <linux/interrupt.h>
@@ -13,6 +15,10 @@
 #include <linux/module.h>
 #include <linux/regmap.h>
 #include <linux/spi/spi.h>
+
+#define RK806_CMD		0
+#define RK806_REG_ADDR_L	1
+#define RK806_REG_ADDR_H	2
 
 static const struct regmap_range rk806_volatile_ranges[] = {
 	regmap_reg_range(RK806_POWER_EN0, RK806_POWER_EN5),
@@ -36,18 +42,19 @@ static int rk806_spi_bus_write(void *context, const void *vdata, size_t count)
 	struct device *dev = context;
 	struct spi_device *spi = to_spi_device(dev);
 	const char *data = vdata;
-	char buffer[4] = { 0 };
+	char buffer[3] = { 0 };
+	struct spi_transfer xfer[2] = { 0 };
 
-	/* implementation currently only supports single write */
-	if (count != 2)
-		return -EINVAL;
+	buffer[RK806_CMD]	 = RK806_CMD_WRITE | (count - 2);
+	buffer[RK806_REG_ADDR_L] = data[0];
+	buffer[RK806_REG_ADDR_H] = RK806_REG_H;
 
-	buffer[0] = RK806_CMD_WRITE | (count - 2);
-	buffer[1] = data[0]; /* register address */
-	buffer[2] = RK806_REG_H;
-	buffer[3] = data[1]; /* register value */
+	xfer[0].tx_buf = buffer;
+	xfer[0].len = sizeof(buffer);
+	xfer[1].tx_buf = data+1;
+	xfer[1].len = count-1;
 
-	return spi_write(spi, &buffer, sizeof(buffer));
+	return spi_sync_transfer(spi, xfer, ARRAY_SIZE(xfer));
 }
 
 static int rk806_spi_bus_read(void *context, const void *vreg, size_t reg_size,
@@ -61,9 +68,9 @@ static int rk806_spi_bus_read(void *context, const void *vreg, size_t reg_size,
 	if (reg_size != sizeof(char) || val_size < 1)
 		return -EINVAL;
 
-	txbuf[0] = RK806_CMD_READ | (val_size - 1);
-	txbuf[1] = *reg;
-	txbuf[2] = RK806_REG_H;
+	txbuf[RK806_CMD]	= RK806_CMD_READ | (val_size - 1);
+	txbuf[RK806_REG_ADDR_L]	= *reg;
+	txbuf[RK806_REG_ADDR_H]	= RK806_REG_H;
 
 	return spi_write_then_read(spi, txbuf, sizeof(txbuf), val, val_size);
 }

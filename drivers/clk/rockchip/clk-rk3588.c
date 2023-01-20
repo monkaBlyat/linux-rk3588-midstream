@@ -7,8 +7,8 @@
 #include <linux/clk-provider.h>
 #include <linux/module.h>
 #include <linux/of.h>
-#include <linux/of_device.h>
 #include <linux/of_address.h>
+#include <linux/platform_device.h>
 #include <linux/syscore_ops.h>
 #include <dt-bindings/clock/rockchip,rk3588-cru.h>
 #include "clk.h"

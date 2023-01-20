@@ -24,6 +24,11 @@
 
 #include "cpufreq-dt.h"
 
+#define RK3588_MEMCFG_HSSPRF_LOW	0x20
+#define RK3588_MEMCFG_HSDPRF_LOW	0x28
+#define RK3588_MEMCFG_HSDPRF_HIGH	0x2c
+#define RK3588_CPU_CTRL			0x30
+
 #define VOLT_RM_TABLE_END		~1
 #define MAX_PROP_NAME_LEN		6
 
@@ -78,18 +83,18 @@ static int rk3588_cpu_set_read_margin(struct device *dev, struct rockchip_opp_in
 
 	dev_dbg(dev, "set rm to %d\n", rm);
 	if (opp_info->grf) {
-		regmap_write(opp_info->grf, 0x20, 0x001c0000 | (rm << 2));
-		regmap_write(opp_info->grf, 0x28, 0x003c0000 | (rm << 2));
-		regmap_write(opp_info->grf, 0x2c, 0x003c0000 | (rm << 2));
-		regmap_write(opp_info->grf, 0x30, 0x00200020);
+		regmap_write(opp_info->grf, RK3588_MEMCFG_HSSPRF_LOW, 0x001c0000 | (rm << 2));
+		regmap_write(opp_info->grf, RK3588_MEMCFG_HSDPRF_LOW, 0x003c0000 | (rm << 2));
+		regmap_write(opp_info->grf, RK3588_MEMCFG_HSDPRF_HIGH, 0x003c0000 | (rm << 2));
+		regmap_write(opp_info->grf, RK3588_CPU_CTRL, 0x00200020);
 		udelay(1);
-		regmap_write(opp_info->grf, 0x30, 0x00200000);
+		regmap_write(opp_info->grf, RK3588_CPU_CTRL, 0x00200000);
 	}
 	if (opp_info->dsu_grf) {
-		regmap_write(opp_info->dsu_grf, 0x20, 0x001c0000 | (rm << 2));
-		regmap_write(opp_info->dsu_grf, 0x28, 0x003c0000 | (rm << 2));
-		regmap_write(opp_info->dsu_grf, 0x2c, 0x003c0000 | (rm << 2));
-		regmap_write(opp_info->dsu_grf, 0x30, 0x001c0000 | (rm << 2));
+		regmap_write(opp_info->dsu_grf, RK3588_MEMCFG_HSSPRF_LOW, 0x001c0000 | (rm << 2));
+		regmap_write(opp_info->dsu_grf, RK3588_MEMCFG_HSDPRF_LOW, 0x003c0000 | (rm << 2));
+		regmap_write(opp_info->dsu_grf, RK3588_MEMCFG_HSDPRF_HIGH, 0x003c0000 | (rm << 2));
+		regmap_write(opp_info->dsu_grf, RK3588_CPU_CTRL, 0x001c0000 | (rm << 2));
 		regmap_write(opp_info->dsu_grf, 0x38, 0x001c0000 | (rm << 2));
 		regmap_write(opp_info->dsu_grf, 0x18, 0x40004000);
 		udelay(1);
@@ -333,7 +338,7 @@ static int rockchip_cpufreq_cluster_init(int cpu, struct cluster_info *cluster)
 		opp_info->dsu_grf = syscon_regmap_lookup_by_phandle(np, "rockchip,dsu-grf");
 		if (IS_ERR(opp_info->dsu_grf))
 			opp_info->dsu_grf = NULL;
-		rockchip_get_volt_rm_table(dev, np, "volt-mem-read-margin", &opp_info->volt_rm_tbl);
+		rockchip_get_volt_rm_table(dev, np, "rockchip,volt-mem-read-margin", &opp_info->volt_rm_tbl);
 
 		of_property_read_u32(np, "rockchip,reboot-freq", &opp_info->reboot_freq);
 	}

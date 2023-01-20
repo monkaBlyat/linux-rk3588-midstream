@@ -9,7 +9,7 @@ title: RK806 Power Management Integrated Circuit
 maintainers:
   - Sebastian Reichel <sebastian.reichel@collabora.com>
 
-description: |
+description:
   Rockchip RK806 series PMIC. This device consists of an spi or
   i2c controlled MFD that includes multiple switchable regulators.
 
@@ -91,16 +91,17 @@ properties:
 
   regulators:
     type: object
+    additionalProperties: false
     patternProperties:
       "^(dcdc-reg([1-9]|10)|pldo-reg[1-6]|nldo-reg[1-5])$":
         type: object
         $ref: /schemas/regulator/regulator.yaml#
         unevaluatedProperties: false
-    additionalProperties: false
 
 patternProperties:
   '-pins$':
     type: object
+    additionalProperties: false
     $ref: /schemas/pinctrl/pinmux-node.yaml
 
     properties:
@@ -108,7 +109,7 @@ patternProperties:
         enum: [pin_fun0, pin_fun1, pin_fun2, pin_fun3, pin_fun4, pin_fun5]
 
       pins:
-        $ref: "/schemas/types.yaml#/definitions/string"
+        $ref: /schemas/types.yaml#/definitions/string
         enum: [gpio_pwrctrl1, gpio_pwrctrl2, gpio_pwrctrl3]
 
 allOf:
