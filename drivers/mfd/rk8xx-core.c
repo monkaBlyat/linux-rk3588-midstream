@@ -75,14 +75,6 @@ static const struct mfd_cell rk806s[] = {
 	},
 };
 
-	{ .name = "rk808-regulator", },
-	{
-		.name = "rk805-pwrkey",
-		.num_resources = ARRAY_SIZE(rk806_pwrkey_resources),
-		.resources = &rk806_pwrkey_resources[0],
-	},
-};
-
 static const struct mfd_cell rk808s[] = {
 	{ .name = "rk808-clkout", .id = PLATFORM_DEVID_NONE, },
 	{ .name = "rk808-regulator", .id = PLATFORM_DEVID_NONE, },
