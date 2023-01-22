@@ -2879,8 +2879,8 @@
 			resets = <&cru SRST_A_USB3OTG0>;
 			reset-names = "usb3-otg";
 			dr_mode = "host";
-			phys = /*<&u2phy0_otg>, */<&usbdp_phy0_u3>;
-			phy-names = /*"usb2-phy",*/ "usb3-phy";
+			phys = <&u2phy0_otg>, <&usbdp_phy0_u3>;
+			phy-names = "usb2-phy", "usb3-phy";
 			phy_type = "utmi_wide";
 			snps,dis_enblslpm_quirk;
 			snps,dis-u1-entry-quirk;
