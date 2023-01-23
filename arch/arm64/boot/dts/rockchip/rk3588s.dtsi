@@ -958,7 +958,7 @@
 
 		u2phy0: usb2-phy@0 {
 			compatible = "rockchip,rk3588-usb2phy";
-			reg = <0x0 0x10>;
+			reg = <0x0 0x0>; // FIXME should be 0x0 0x10 - PHY driver "address cells" bug
 			interrupts = <GIC_SPI 393 IRQ_TYPE_LEVEL_HIGH 0>;
 			resets = <&cru SRST_OTGPHY_U3_0>, <&cru SRST_P_USB2PHY_U3_0_GRF0>;
 			reset-names = "phy", "apb";
