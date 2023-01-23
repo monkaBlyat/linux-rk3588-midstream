@@ -1439,7 +1439,8 @@ static int rk3588_udphy_hpd_event_trigger(struct rockchip_udphy *udphy, bool hpd
 	udphy->dp_sink_hpd_sel = true;
 	udphy->dp_sink_hpd_cfg = hpd;
 
-	grfreg_write(udphy->vogrf, &cfg->vogrfcfg[udphy->id].hpd_trigger, hpd);
+	if (udphy->vogrf != NULL)
+		grfreg_write(udphy->vogrf, &cfg->vogrfcfg[udphy->id].hpd_trigger, hpd);
 
 	return 0;
 }
@@ -1481,7 +1482,8 @@ static int rk3588_udphy_dplane_select(struct rockchip_udphy *udphy)
 		break;
 	}
 
-	regmap_write(udphy->vogrf, udphy->id ? RK3588_GRF_VO0_CON2 : RK3588_GRF_VO0_CON0,
+	if (udphy->vogrf != NULL)
+		regmap_write(udphy->vogrf, udphy->id ? RK3588_GRF_VO0_CON2 : RK3588_GRF_VO0_CON0,
 		     ((DP_AUX_DIN_SEL | DP_AUX_DOUT_SEL | DP_LANE_SEL_ALL) << 16) |
 		     FIELD_PREP(DP_AUX_DIN_SEL, udphy->dp_aux_din_sel) |
 		     FIELD_PREP(DP_AUX_DOUT_SEL, udphy->dp_aux_dout_sel) | value);
