@@ -74,6 +74,7 @@ struct pancsf_vm {
 	int as;
 	atomic_t as_count;
 	bool for_mcu;
+	bool destroyed;
 	bool vm_bind_failure;
 	struct list_head node;
 };
@@ -715,6 +716,11 @@ pancsf_vm_map_bo_range(struct pancsf_vm *vm, struct pancsf_gem_object *bo,
 		return -EINVAL;
 
 	mutex_lock(&vm->lock);
+	if (vm->destroyed) {
+		ret = -EINVAL;
+		goto out_unlock;
+	}
+
 	vma = pancsf_vm_alloc_vma_locked(vm, size, *va, flags);
 	if (IS_ERR(vma)) {
 		ret = PTR_ERR(vma);
@@ -763,6 +769,10 @@ pancsf_vm_unmap_range(struct pancsf_vm *vm, u64 va, size_t size)
 		return 0;
 
 	mutex_lock(&vm->lock);
+	if (vm->destroyed) {
+		ret = -EINVAL;
+		goto out_unlock;
+	}
 
 	drm_mm_for_each_node_in_range_safe(mm_node, tmp_mm_node, &vm->mm, va >> PAGE_SHIFT,
 					   (va + size) >> PAGE_SHIFT) {
@@ -811,9 +821,11 @@ pancsf_vm_unmap_range(struct pancsf_vm *vm, u64 va, size_t size)
 		mm_node = list_next_entry(mm_node, node_list);
 
 		if (vma != last && vma != first) {
-			ret = pancsf_vma_unmap_locked(vma);
-			if (ret)
-				goto out_unlock;
+			if (vma->mapped) {
+				ret = pancsf_vma_unmap_locked(vma);
+				if (ret)
+					goto out_unlock;
+			}
 
 			pancsf_vm_free_vma_locked(vma);
 		}
@@ -854,6 +866,21 @@ out_unlock:
 	mutex_unlock(&vm->lock);
 
 	return ret;
+}
+
+void pancsf_vm_unmap_all_locked(struct pancsf_vm *vm)
+{
+	struct drm_mm_node *mm_node, *tmp_mm_node;
+
+	lockdep_assert_held(&vm->lock);
+	drm_mm_for_each_node_safe(mm_node, tmp_mm_node, &vm->mm) {
+		struct pancsf_vma *vma = container_of(mm_node, struct pancsf_vma, vm_mm_node);
+
+		if (vma->mapped)
+			pancsf_vma_unmap_locked(vma);
+
+		pancsf_vm_free_vma_locked(vma);
+	}
 }
 
 struct pancsf_gem_object *
@@ -906,6 +933,24 @@ int pancsf_vm_pool_create_vm(struct pancsf_device *pfdev, struct pancsf_vm_pool 
 	return id;
 }
 
+static void pancsf_vm_destroy(struct pancsf_vm *vm)
+{
+	if (!vm)
+		return;
+
+	mutex_lock(&vm->lock);
+	/* We need to tear down all VMAs to kill the VM <-> priv-BO cross ref:
+	 * VMA (which is part of the VM) hold a ref to the private BO,
+	 * and the private BO hold a ref to its exclusive VM. This might cause
+	 * (recoverable) page faults if jobs are still in flight, but let's
+	 * leave this responsibility to userspace.
+	 */
+	pancsf_vm_unmap_all_locked(vm);
+	vm->destroyed = true;
+	mutex_unlock(&vm->lock);
+	pancsf_vm_put(vm);
+}
+
 void pancsf_vm_pool_destroy_vm(struct pancsf_vm_pool *pool, u32 handle)
 {
 	struct pancsf_vm *vm;
@@ -914,8 +959,7 @@ void pancsf_vm_pool_destroy_vm(struct pancsf_vm_pool *pool, u32 handle)
 	vm = xa_erase(&pool->xa, handle);
 	mutex_unlock(&pool->lock);
 
-	if (vm)
-		pancsf_vm_put(vm);
+	pancsf_vm_destroy(vm);
 }
 
 struct pancsf_vm *pancsf_vm_pool_get_vm(struct pancsf_vm_pool *pool, u32 handle)
@@ -941,7 +985,7 @@ void pancsf_vm_pool_destroy(struct pancsf_file *pfile)
 
 	mutex_lock(&pfile->vms->lock);
 	xa_for_each(&pfile->vms->xa, i, vm)
-		pancsf_vm_put(vm);
+		pancsf_vm_destroy(vm);
 	mutex_unlock(&pfile->vms->lock);
 
 	mutex_destroy(&pfile->vms->lock);
@@ -988,6 +1032,11 @@ static int pancsf_mmu_map_fault_addr_locked(struct pancsf_device *pfdev, int as,
 		return -ENOENT;
 
 	mutex_lock(&vm->lock);
+	if (vm->destroyed) {
+		ret = -EINVAL;
+		goto out;
+	}
+
 	drm_mm_for_each_node_in_range(mm_node, &vm->mm, addr, addr + 1)
 		vma = container_of(mm_node, struct pancsf_vma, vm_mm_node);
 
@@ -1020,7 +1069,6 @@ static void pancsf_vm_release(struct kref *kref)
 {
 	struct pancsf_vm *vm = container_of(kref, struct pancsf_vm, refcount);
 	struct pancsf_device *pfdev = vm->pfdev;
-	u32 va_bits = GPU_MMU_FEATURES_VA_BITS(pfdev->gpu_info.mmu_features);
 
 	mutex_lock(&pfdev->mmu->as.slots_lock);
 	if (vm->as >= 0) {
@@ -1036,7 +1084,10 @@ static void pancsf_vm_release(struct kref *kref)
 	}
 	mutex_unlock(&pfdev->mmu->as.slots_lock);
 
-	pancsf_vm_unmap_range(vm, 0, 1ull << va_bits);
+	mutex_lock(&vm->lock);
+	if (WARN_ON(!drm_mm_clean(&vm->mm)))
+		pancsf_vm_unmap_all_locked(vm);
+	mutex_unlock(&vm->lock);
 
 	free_io_pgtable_ops(vm->pgtbl_ops);
 	drm_mm_takedown(&vm->mm);
@@ -1234,6 +1285,11 @@ struct pancsf_vm *pancsf_vm_create(struct pancsf_device *pfdev, bool for_mcu)
 	kref_init(&vm->refcount);
 
 	return vm;
+}
+
+struct dma_resv *pancsf_vm_resv(struct pancsf_vm *vm)
+{
+	return &vm->resv;
 }
 
 /* Dummy fence ops. We just need a fence that's never signaled when the

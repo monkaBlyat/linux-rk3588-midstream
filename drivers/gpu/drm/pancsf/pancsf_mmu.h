@@ -42,6 +42,8 @@ struct pancsf_vm *pancsf_vm_get(struct pancsf_vm *vm);
 void pancsf_vm_put(struct pancsf_vm *vm);
 struct pancsf_vm *pancsf_vm_create(struct pancsf_device *pfdev, bool for_mcu);
 
+struct dma_resv *pancsf_vm_resv(struct pancsf_vm *vm);
+
 void pancsf_vm_pool_destroy(struct pancsf_file *pfile);
 int pancsf_vm_pool_create(struct pancsf_file *pfile);
 int pancsf_vm_pool_create_vm(struct pancsf_device *pfdev, struct pancsf_vm_pool *pool);

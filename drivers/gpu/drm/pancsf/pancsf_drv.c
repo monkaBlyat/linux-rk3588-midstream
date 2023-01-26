@@ -97,15 +97,26 @@ static int pancsf_ioctl_vm_destroy(struct drm_device *ddev, void *data,
 static int pancsf_ioctl_bo_create(struct drm_device *ddev, void *data,
 				  struct drm_file *file)
 {
+	struct pancsf_file *pfile = file->driver_priv;
 	struct pancsf_gem_object *bo;
 	struct drm_pancsf_bo_create *args = data;
+	struct pancsf_vm *vm = NULL;
 
 	if (!args->size || args->pad ||
 	    (args->flags & ~PANCSF_BO_FLAGS))
 		return -EINVAL;
 
-	bo = pancsf_gem_create_with_handle(file, ddev, args->size, args->flags,
+	if (args->vm_id) {
+		vm = pancsf_vm_pool_get_vm(pfile->vms, args->vm_id);
+		if (!vm)
+			return -EINVAL;
+	}
+
+	bo = pancsf_gem_create_with_handle(file, ddev, vm, args->size, args->flags,
 					   &args->handle);
+
+	pancsf_vm_put(vm);
+
 	if (IS_ERR(bo))
 		return PTR_ERR(bo);
 
@@ -821,7 +832,7 @@ static const struct drm_driver pancsf_drm_driver = {
 	.minor			= 0,
 
 	.gem_create_object	= pancsf_gem_create_object,
-	.prime_handle_to_fd	= drm_gem_prime_handle_to_fd,
+	.prime_handle_to_fd	= pancsf_gem_prime_handle_to_fd,
 	.prime_fd_to_handle	= drm_gem_prime_fd_to_handle,
 	.gem_prime_import_sg_table = pancsf_gem_prime_import_sg_table,
 	.gem_prime_mmap		= drm_gem_prime_mmap,
