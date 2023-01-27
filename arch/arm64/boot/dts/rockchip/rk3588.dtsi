@@ -321,7 +321,7 @@
 		rockchip,u2phy-grf = <&usb2phy1_grf>;
 		rockchip,usb-grf = <&usb_grf>;
 		rockchip,usbdpphy-grf = <&usbdpphy1_grf>;
-		// rockchip,vo-grf = <&vo0_grf>;
+		rockchip,vo-grf = <&vo0_grf>;
 		clocks = <&cru CLK_USBDPPHY_MIPIDCPPHY_REF>,
 			 <&cru CLK_USBDP_PHY1_IMMORTAL>,
 			 <&cru PCLK_USBDPPHY1>,

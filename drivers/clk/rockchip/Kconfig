@@ -107,4 +107,10 @@ config CLK_RK3588
 	help
 	  Build the driver for RK3588 Clock Driver.
 
+config ROCKCHIP_CLK_LINK
+	tristate "Rockchip clock link support"
+	default CLK_RK3588
+	help
+	  Say y here to enable clock link for Rockchip.
+
 endif

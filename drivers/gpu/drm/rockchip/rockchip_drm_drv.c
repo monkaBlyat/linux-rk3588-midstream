@@ -43,6 +43,28 @@
 
 static const struct drm_driver rockchip_drm_driver;
 
+uint32_t rockchip_drm_get_bpp(const struct drm_format_info *info)
+{
+	/* use whatever a driver has set */
+	if (info->cpp[0])
+		return info->cpp[0] * 8;
+
+	switch (info->format) {
+	case DRM_FORMAT_YUV420_8BIT:
+		return 12;
+	case DRM_FORMAT_YUV420_10BIT:
+		return 15;
+	case DRM_FORMAT_VUY101010:
+		return 30;
+	default:
+		break;
+	}
+
+	/* all attempts failed */
+	return 0;
+}
+EXPORT_SYMBOL(rockchip_drm_get_bpp);
+
 /*
  * Attach a (component) device to the shared drm dma mapping from master drm
  * device.  This is used by the VOPs to map GEM buffers to a common DMA
@@ -95,6 +117,31 @@ void rockchip_drm_dma_init_device(struct drm_device *drm_dev,
 		private->iommu_dev = ERR_PTR(-ENODEV);
 	else if (!private->iommu_dev)
 		private->iommu_dev = dev;
+}
+
+int rockchip_register_crtc_funcs(struct drm_crtc *crtc,
+				 const struct rockchip_crtc_funcs *crtc_funcs)
+{
+	int pipe = drm_crtc_index(crtc);
+	struct rockchip_drm_private *priv = crtc->dev->dev_private;
+
+	if (pipe >= ROCKCHIP_MAX_CRTC)
+		return -EINVAL;
+
+	priv->crtc_funcs[pipe] = crtc_funcs;
+
+	return 0;
+}
+
+void rockchip_unregister_crtc_funcs(struct drm_crtc *crtc)
+{
+	int pipe = drm_crtc_index(crtc);
+	struct rockchip_drm_private *priv = crtc->dev->dev_private;
+
+	if (pipe >= ROCKCHIP_MAX_CRTC)
+		return;
+
+	priv->crtc_funcs[pipe] = NULL;
 }
 
 static int rockchip_drm_init_iommu(struct drm_device *drm_dev)

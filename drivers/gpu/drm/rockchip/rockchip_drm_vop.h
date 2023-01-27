@@ -7,6 +7,8 @@
 #ifndef _ROCKCHIP_DRM_VOP_H
 #define _ROCKCHIP_DRM_VOP_H
 
+#include <drm/drm_plane.h>
+
 /*
  * major: IP major version, used for IP structure
  * minor: big feature change under same structure
@@ -36,7 +38,8 @@
 enum vop_data_format {
 	VOP_FMT_ARGB8888 = 0,
 	VOP_FMT_RGB888,
-	VOP_FMT_RGB565,
+	VOP_FMT_RGB565 = 2,
+	VOP_FMT_YUYV = 2,
 	VOP_FMT_YUV420SP = 4,
 	VOP_FMT_YUV422SP,
 	VOP_FMT_YUV444SP,
@@ -44,9 +47,13 @@ enum vop_data_format {
 
 struct vop_reg {
 	uint32_t mask;
-	uint16_t offset;
-	uint8_t shift;
-	bool write_mask;
+	uint32_t offset:17;
+	uint32_t shift:5;
+	uint32_t begin_minor:4;
+	uint32_t end_minor:4;
+	uint32_t reserved:2;
+	uint32_t major:3;
+	uint32_t write_mask:1;
 	bool relaxed;
 };
 
@@ -133,6 +140,70 @@ struct vop_intr {
 	struct vop_reg enable;
 	struct vop_reg clear;
 	struct vop_reg status;
+};
+
+struct vop_hdr_table {
+	const uint32_t hdr2sdr_eetf_oetf_y0_offset;
+	const uint32_t hdr2sdr_eetf_oetf_y1_offset;
+	const uint32_t *hdr2sdr_eetf_yn;
+	const uint32_t *hdr2sdr_bt1886oetf_yn;
+	const uint32_t hdr2sdr_sat_y0_offset;
+	const uint32_t hdr2sdr_sat_y1_offset;
+	const uint32_t *hdr2sdr_sat_yn;
+
+	const uint32_t hdr2sdr_src_range_min;
+	const uint32_t hdr2sdr_src_range_max;
+	const uint32_t hdr2sdr_normfaceetf;
+	const uint32_t hdr2sdr_dst_range_min;
+	const uint32_t hdr2sdr_dst_range_max;
+	const uint32_t hdr2sdr_normfacgamma;
+
+	const uint32_t sdr2hdr_eotf_oetf_y0_offset;
+	const uint32_t sdr2hdr_eotf_oetf_y1_offset;
+	const uint32_t *sdr2hdr_bt1886eotf_yn_for_hlg_hdr;
+	const uint32_t *sdr2hdr_bt1886eotf_yn_for_bt2020;
+	const uint32_t *sdr2hdr_bt1886eotf_yn_for_hdr;
+	const uint32_t *sdr2hdr_st2084oetf_yn_for_hlg_hdr;
+	const uint32_t *sdr2hdr_st2084oetf_yn_for_bt2020;
+	const uint32_t *sdr2hdr_st2084oetf_yn_for_hdr;
+	const uint32_t sdr2hdr_oetf_dx_dxpow1_offset;
+	const uint32_t *sdr2hdr_st2084oetf_dxn_pow2;
+	const uint32_t *sdr2hdr_st2084oetf_dxn;
+	const uint32_t sdr2hdr_oetf_xn1_offset;
+	const uint32_t *sdr2hdr_st2084oetf_xn;
+};
+
+enum {
+	VOP_CSC_Y2R_BT601,
+	VOP_CSC_Y2R_BT709,
+	VOP_CSC_Y2R_BT2020,
+	VOP_CSC_R2Y_BT601,
+	VOP_CSC_R2Y_BT709,
+	VOP_CSC_R2Y_BT2020,
+	VOP_CSC_R2R_BT2020_TO_BT709,
+	VOP_CSC_R2R_BT709_TO_2020,
+};
+
+enum _vop_overlay_mode {
+	VOP_RGB_DOMAIN,
+	VOP_YUV_DOMAIN
+};
+
+enum _vop_sdr2hdr_func {
+	SDR2HDR_FOR_BT2020,
+	SDR2HDR_FOR_HDR,
+	SDR2HDR_FOR_HLG_HDR,
+};
+
+enum _vop_rgb2rgb_conv_mode {
+	BT709_TO_BT2020,
+	BT2020_TO_BT709,
+};
+
+enum _MCU_IOCTL {
+	MCU_WRCMD = 0,
+	MCU_WRDATA,
+	MCU_SETBYPASS,
 };
 
 struct vop_scl_extension {
@@ -424,6 +495,11 @@ static inline int scl_vop_cal_lb_mode(int width, bool is_yuv)
 	}
 
 	return lb_mode;
+}
+
+static inline int interpolate(int x1, int y1, int x2, int y2, int x)
+{
+	return y1 + (y2 - y1) * (x - x1) / (x2 - x1);
 }
 
 extern const struct component_ops vop_component_ops;
