@@ -968,7 +968,7 @@ static int rockchip_usb2phy_set_mode(struct phy *phy,
 		 * enable vbus detect on otg mode.
 		 */
 		fallthrough;
-	case PHY_MODE_USB_DEVICE:
+	case PHY_MODE_USB_DEVICE ... PHY_MODE_USB_DEVICE_SS:
 		/* Disable VBUS supply */
 		rockchip_set_vbus_power(rport, false);
 		extcon_set_state_sync(rphy->edev, EXTCON_PROP_USB_VBUS, false);
@@ -978,7 +978,7 @@ static int rockchip_usb2phy_set_mode(struct phy *phy,
 		rport->perip_connected = true;
 		vbus_det_en = true;
 		break;
-	case PHY_MODE_USB_HOST:
+	case PHY_MODE_USB_HOST ... PHY_MODE_USB_HOST_SS:
 		/* Enable VBUS supply */
 		ret = rockchip_set_vbus_power(rport, true);
 		if (ret) {
@@ -997,7 +997,7 @@ static int rockchip_usb2phy_set_mode(struct phy *phy,
 		vbus_det_en = false;
 		break;
 	default:
-		dev_info(&rport->phy->dev, "illegal mode\n");
+		dev_info(&rport->phy->dev, "illegal mode %d\n", mode);
 		return ret;
 	}
 
