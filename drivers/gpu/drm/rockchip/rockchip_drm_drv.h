@@ -11,6 +11,7 @@
 
 #include <drm/drm_atomic_helper.h>
 #include <drm/display/drm_dsc.h>
+#include <drm/drm_edid.h>
 #include <drm/drm_fb_helper.h>
 #include <drm/drm_fourcc.h>
 #include <drm/drm_gem.h>
@@ -481,12 +482,12 @@ uint32_t rockchip_drm_of_find_possible_crtcs(struct drm_device *dev,
 					     struct device_node *port);
 uint32_t rockchip_drm_get_bpp(const struct drm_format_info *info);
 int rockchip_drm_get_yuv422_format(struct drm_connector *connector,
-				   struct edid *edid);
+				   struct drm_edid *edid);
 int rockchip_drm_parse_cea_ext(struct rockchip_drm_dsc_cap *dsc_cap,
 			       u8 *max_frl_rate_per_lane, u8 *max_lanes,
-			       const struct edid *edid);
+			       const struct drm_edid *edid);
 int rockchip_drm_parse_next_hdr(struct next_hdr_sink_data *sink_data,
-				const struct edid *edid);
+				const struct drm_edid *edid);
 
 extern struct platform_driver cdn_dp_driver;
 extern struct platform_driver dw_hdmi_rockchip_pltfm_driver;

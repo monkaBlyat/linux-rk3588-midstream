@@ -176,6 +176,10 @@ struct dw_hdmi {
 	void __iomem *regs;
 	bool sink_is_hdmi;
 	bool sink_has_audio;
+	bool hpd_state;
+	bool support_hdmi;
+	bool force_logo;
+	int force_output;
 
 	struct pinctrl *pinctrl;
 	struct pinctrl_state *default_state;
@@ -266,6 +270,25 @@ static void hdmi_mask_writeb(struct dw_hdmi *hdmi, u8 data, unsigned int reg,
 			     u8 shift, u8 mask)
 {
 	hdmi_modb(hdmi, data << shift, mask, reg);
+}
+
+static bool dw_hdmi_check_output_type_changed(struct dw_hdmi *hdmi)
+{
+	bool sink_hdmi;
+
+	sink_hdmi = hdmi->sink_is_hdmi;
+
+	if (hdmi->force_output == 1)
+		hdmi->sink_is_hdmi = true;
+	else if (hdmi->force_output == 2)
+		hdmi->sink_is_hdmi = false;
+	else
+		hdmi->sink_is_hdmi = hdmi->support_hdmi;
+
+	if (sink_hdmi != hdmi->sink_is_hdmi)
+		return true;
+
+	return false;
 }
 
 static void dw_hdmi_i2c_init(struct dw_hdmi *hdmi)
@@ -2494,6 +2517,7 @@ static struct edid *dw_hdmi_get_edid(struct dw_hdmi *hdmi,
 		edid->width_cm, edid->height_cm);
 
 	hdmi->sink_is_hdmi = drm_detect_hdmi_monitor(edid);
+	hdmi->support_hdmi = drm_detect_hdmi_monitor(edid);
 	hdmi->sink_has_audio = drm_detect_monitor_audio(edid);
 
 	return edid;
@@ -2553,6 +2577,89 @@ static int dw_hdmi_connector_atomic_check(struct drm_connector *connector,
 
 	return 0;
 }
+
+static int
+dw_hdmi_atomic_connector_set_property(struct drm_connector *connector,
+				      struct drm_connector_state *state,
+				      struct drm_property *property,
+				      uint64_t val)
+{
+	struct dw_hdmi *hdmi = container_of(connector, struct dw_hdmi,
+					     connector);
+	const struct dw_hdmi_property_ops *ops =
+				hdmi->plat_data->property_ops;
+
+	if (ops && ops->set_property)
+		return ops->set_property(connector, state, property,
+					 val, hdmi->plat_data->phy_data);
+	else
+		return -EINVAL;
+}
+
+static int
+dw_hdmi_atomic_connector_get_property(struct drm_connector *connector,
+				      const struct drm_connector_state *state,
+				      struct drm_property *property,
+				      uint64_t *val)
+{
+	struct dw_hdmi *hdmi = container_of(connector, struct dw_hdmi,
+					     connector);
+	const struct dw_hdmi_property_ops *ops =
+				hdmi->plat_data->property_ops;
+
+	if (ops && ops->get_property)
+		return ops->get_property(connector, state, property,
+					 val, hdmi->plat_data->phy_data);
+	else
+		return -EINVAL;
+}
+
+static int
+dw_hdmi_connector_set_property(struct drm_connector *connector,
+			       struct drm_property *property, uint64_t val)
+{
+	return dw_hdmi_atomic_connector_set_property(connector, NULL,
+						     property, val);
+}
+
+void dw_hdmi_set_quant_range(struct dw_hdmi *hdmi)
+{
+	if (!hdmi->bridge_is_on)
+		return;
+
+	hdmi_writeb(hdmi, HDMI_FC_GCP_SET_AVMUTE, HDMI_FC_GCP);
+	dw_hdmi_setup(hdmi, hdmi->curr_conn, &hdmi->previous_mode);
+	hdmi_writeb(hdmi, HDMI_FC_GCP_CLEAR_AVMUTE, HDMI_FC_GCP);
+}
+EXPORT_SYMBOL_GPL(dw_hdmi_set_quant_range);
+
+void dw_hdmi_set_output_type(struct dw_hdmi *hdmi, u64 val)
+{
+	hdmi->force_output = val;
+
+	if (!dw_hdmi_check_output_type_changed(hdmi))
+		return;
+
+	if (!hdmi->bridge_is_on)
+		return;
+
+	hdmi_writeb(hdmi, HDMI_FC_GCP_SET_AVMUTE, HDMI_FC_GCP);
+	dw_hdmi_setup(hdmi, hdmi->curr_conn, &hdmi->previous_mode);
+	hdmi_writeb(hdmi, HDMI_FC_GCP_CLEAR_AVMUTE, HDMI_FC_GCP);
+}
+EXPORT_SYMBOL_GPL(dw_hdmi_set_output_type);
+
+bool dw_hdmi_get_output_whether_hdmi(struct dw_hdmi *hdmi)
+{
+	return hdmi->sink_is_hdmi;
+}
+EXPORT_SYMBOL_GPL(dw_hdmi_get_output_whether_hdmi);
+
+int dw_hdmi_get_output_type_cap(struct dw_hdmi *hdmi)
+{
+	return hdmi->support_hdmi;
+}
+EXPORT_SYMBOL_GPL(dw_hdmi_get_output_type_cap);
 
 static void dw_hdmi_connector_force(struct drm_connector *connector)
 {

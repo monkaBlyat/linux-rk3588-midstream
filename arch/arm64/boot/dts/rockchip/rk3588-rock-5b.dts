@@ -97,6 +97,52 @@
 		vin-supply = <&vcc5v0_sys>;
 	};
 
+	hdmi0_sound: hdmi0-sound {
+		status = "okay";
+		compatible = "rockchip,hdmi";
+		rockchip,mclk-fs = <128>;
+		rockchip,card-name = "rockchip-hdmi0";
+		rockchip,cpu = <&i2s5_8ch>;
+		rockchip,codec = <&hdmi0>;
+		rockchip,jack-det;
+	};
+
+	hdmi1_sound: hdmi1-sound {
+		status = "okay";
+		compatible = "rockchip,hdmi";
+		rockchip,mclk-fs = <128>;
+		rockchip,card-name = "rockchip-hdmi1";
+		rockchip,cpu = <&i2s6_8ch>;
+		rockchip,codec = <&hdmi1>;
+		rockchip,jack-det;
+	};
+/*
+	es8316_sound: es8316-sound {
+		status = "okay";
+		compatible = "simple-audio-card";
+		simple-audio-card,format = "i2s";
+		simple-audio-card,mclk-fs = <256>;
+		simple-audio-card,name = "rockchip-es8316";
+		simple-audio-card,dai-link@0 {
+			format = "i2s";
+			cpu {
+				sound-dai = <&i2s0_8ch>;
+			};
+			codec {
+				sound-dai = <&es8316>;
+			};
+		};
+	};
+
+	rk_headset: rk-headset {
+		status = "okay";
+		compatible = "rockchip_headset";
+		headset_gpio = <&gpio1 RK_PD5 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&hp_det>;
+		io-channels = <&saradc 3>;
+	};
+*/
 	leds {
 		compatible = "gpio-leds";
 		pinctrl-names = "default";
@@ -140,6 +186,90 @@
 
 &uart2 {
 	pinctrl-0 = <&uart2m0_xfer>;
+	status = "okay";
+};
+
+&display_subsystem {
+/*	route {
+		route_hdmi0: route-hdmi0 {
+			status = "okay";
+			logo,uboot = "logo.bmp";
+			logo,kernel = "logo_kernel.bmp";
+			logo,mode = "center";
+			charge_logo,mode = "center";
+			connect = <&vp0_out_hdmi0>;
+		};
+
+		route_hdmi1: route-hdmi1 {
+			status = "okay";
+			logo,uboot = "logo.bmp";
+			logo,kernel = "logo_kernel.bmp";
+			logo,mode = "center";
+			charge_logo,mode = "center";
+			connect = <&vp1_out_hdmi1>;
+		};
+	};*/
+};
+
+&hdmi0 {
+	status = "disabled";
+};
+
+&hdmi0_in_vp0 {
+	status = "disabled";
+};
+
+&hdmi0_in_vp1 {
+	status = "disabled";
+};
+
+&hdmi0_in_vp2 {
+	status = "disabled";
+};
+
+&hdmi0_sound {
+	status = "okay";
+};
+
+&hdmi1 {
+	status = "disabled";
+	pinctrl-names = "default";
+	pinctrl-0 = <&hdmim0_tx1_cec &hdmim0_tx1_hpd &hdmim1_tx1_scl &hdmim1_tx1_sda>;
+};
+
+&hdmi1_in_vp0 {
+	status = "disabled";
+};
+
+&hdmi1_in_vp1 {
+	status = "disabled";
+};
+
+&hdmi1_in_vp2 {
+	status = "disabled";
+};
+
+&hdmi1_sound {
+	status = "okay";
+};
+
+&hdptxphy_hdmi0 {
+	status = "okay";
+};
+
+&hdptxphy_hdmi1 {
+	status = "okay";
+};
+
+&i2s5_8ch {
+	status = "okay";
+};
+
+&i2s6_8ch {
+	status = "okay";
+};
+
+&i2s7_8ch {
 	status = "okay";
 };
 
