@@ -1370,14 +1370,6 @@ static int analogix_dp_bridge_attach(struct drm_bridge *bridge,
 	return 0;
 }
 
-static void analogix_dp_bridge_detach(struct drm_bridge *bridge)
-{
-	struct analogix_dp_device *dp = bridge->driver_private;
-
-	if (dp->plat_data->detach)
-		dp->plat_data->detach(dp->plat_data, bridge);
-}
-
 static
 struct drm_crtc *analogix_dp_get_old_crtc(struct analogix_dp_device *dp,
 					  struct drm_atomic_state *state)
@@ -1774,7 +1766,6 @@ static const struct drm_bridge_funcs analogix_dp_bridge_funcs = {
 	.atomic_post_disable = analogix_dp_bridge_atomic_post_disable,
 	.mode_set = analogix_dp_bridge_mode_set,
 	.attach = analogix_dp_bridge_attach,
-	.detach = analogix_dp_bridge_detach,
 	.mode_valid = analogix_dp_bridge_mode_valid,
 };
 
@@ -1950,16 +1941,6 @@ static void analogix_dp_link_train_restore(struct analogix_dp_device *dp)
 				analogix_dp_get_lane_link_training(dp, lane);
 }
 
-int analogix_dp_loader_protect(struct analogix_dp_device *dp)
-{
-	int ret;
-
-	ret = analogix_dp_phy_power_on(dp);
-	if (ret)
-		return ret;
-
-	dp->dpms_mode = DRM_MODE_DPMS_ON;
-
 	analogix_dp_link_train_restore(dp);
 
 	ret = analogix_dp_fast_link_train_detection(dp);
@@ -1971,10 +1952,6 @@ int analogix_dp_loader_protect(struct analogix_dp_device *dp)
 		if (ret)
 			return ret;
 	}
-
-	return 0;
-}
-EXPORT_SYMBOL_GPL(analogix_dp_loader_protect);
 
 struct analogix_dp_device *
 analogix_dp_probe(struct device *dev, struct analogix_dp_plat_data *plat_data)
