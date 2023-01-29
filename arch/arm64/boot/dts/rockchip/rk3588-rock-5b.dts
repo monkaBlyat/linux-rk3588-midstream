@@ -190,33 +190,33 @@
 };
 
 &display_subsystem {
-/*	route {
-		route_hdmi0: route-hdmi0 {
+	route {
+		route_edp0: route-edp0 {
 			status = "okay";
 			logo,uboot = "logo.bmp";
 			logo,kernel = "logo_kernel.bmp";
 			logo,mode = "center";
 			charge_logo,mode = "center";
-			connect = <&vp0_out_hdmi0>;
+			connect = <&vp0_out_edp0>;
 		};
 
-		route_hdmi1: route-hdmi1 {
+		route_edp1: route-edp1 {
 			status = "okay";
 			logo,uboot = "logo.bmp";
 			logo,kernel = "logo_kernel.bmp";
 			logo,mode = "center";
 			charge_logo,mode = "center";
-			connect = <&vp1_out_hdmi1>;
+			connect = <&vp1_out_edp1>;
 		};
-	};*/
+	};
 };
 
-&hdmi0 {
-	status = "disabled";
+&edp0 {
+	status = "okay";
 };
 
-&hdmi0_in_vp0 {
-	status = "disabled";
+&edp0_in_vp0 {
+	status = "okay";
 };
 
 &hdmi0_in_vp1 {
@@ -228,7 +228,7 @@
 };
 
 &hdmi0_sound {
-	status = "okay";
+	status = "disabled";
 };
 
 &hdmi1 {
@@ -250,14 +250,14 @@
 };
 
 &hdmi1_sound {
+	status = "disabled";
+};
+
+&hdptxphy0 {
 	status = "okay";
 };
 
-&hdptxphy_hdmi0 {
-	status = "okay";
-};
-
-&hdptxphy_hdmi1 {
+&hdptxphy1 {
 	status = "okay";
 };
 
