@@ -17,6 +17,7 @@
 #include <linux/clk.h>
 
 #include <uapi/linux/videodev2.h>
+#include <uapi/linux/media-bus-format.h>
 #include <video/of_videomode.h>
 #include <video/videomode.h>
 
@@ -32,7 +33,7 @@
 #include "../bridge/analogix/analogix_dp_core.h"
 
 #include "rockchip_drm_drv.h"
-#include "rockchip_drm_vop.h"
+#include "rockchip_drm_vop2.h"
 
 #define PSR_WAIT_LINE_FLAG_TIMEOUT_MS	100
 
@@ -259,8 +260,6 @@ static int rockchip_dp_bridge_attach(struct analogix_dp_plat_data *plat_data,
 				     struct drm_bridge *bridge,
 				     struct drm_connector *connector)
 {
-	struct rockchip_dp_device *dp = to_dp(plat_data);
-
 	if (!connector) {
 		struct list_head *connector_list =
 			&bridge->dev->mode_config.connector_list;
@@ -364,7 +363,7 @@ rockchip_dp_drm_encoder_atomic_check(struct drm_encoder *encoder,
 				      struct drm_crtc_state *crtc_state,
 				      struct drm_connector_state *conn_state)
 {
-	struct rockchip_dp_device *dp = to_dp(encoder);
+	struct rockchip_dp_device *dp = encoder_to_dp(encoder);
 	struct rockchip_crtc_state *s = to_rockchip_crtc_state(crtc_state);
 	struct drm_display_info *di = &conn_state->connector->display_info;
 

@@ -492,7 +492,7 @@ static int analogix_dp_process_clock_recovery(struct analogix_dp_device *dp)
 	u8 link_status[2], adjust_request[2];
 	u8 training_pattern = TRAINING_PTN2;
 
-	drm_dp_link_train_clock_recovery_delay(dp->dpcd);
+	drm_dp_link_train_clock_recovery_delay(&dp->aux, dp->dpcd);
 
 	lane_count = dp->link_train.lane_count;
 
@@ -567,7 +567,7 @@ static int analogix_dp_process_equalizer_training(struct analogix_dp_device *dp)
 	u32 reg;
 	u8 link_align, link_status[2], adjust_request[2];
 
-	drm_dp_link_train_channel_eq_delay(dp->dpcd);
+	drm_dp_link_train_channel_eq_delay(&dp->aux, dp->dpcd);
 
 	lane_count = dp->link_train.lane_count;
 
@@ -1772,6 +1772,7 @@ static const struct drm_bridge_funcs analogix_dp_bridge_funcs = {
 static int analogix_dp_bridge_init(struct analogix_dp_device *dp)
 {
 	struct drm_bridge *bridge = &dp->bridge;
+	int ret;
 
 	if (!dp->plat_data->left) {
 		ret = drm_bridge_attach(dp->encoder, bridge, NULL, 0);
@@ -1922,37 +1923,6 @@ int analogix_dp_audio_get_eld(struct analogix_dp_device *dp, u8 *buf, size_t len
 }
 EXPORT_SYMBOL_GPL(analogix_dp_audio_get_eld);
 
-static void analogix_dp_link_train_restore(struct analogix_dp_device *dp)
-{
-	u32 link_rate, lane_count;
-	u8 lane, spread;
-
-	analogix_dp_get_link_bandwidth(dp, &link_rate);
-	analogix_dp_get_lane_count(dp, &lane_count);
-	drm_dp_dpcd_readb(&dp->aux, DP_MAX_DOWNSPREAD, &spread);
-
-	dp->link_train.link_rate = link_rate;
-	dp->link_train.lane_count = lane_count;
-	dp->link_train.enhanced_framing = analogix_dp_get_enhanced_mode(dp);
-	dp->link_train.ssc = !!(spread & DP_MAX_DOWNSPREAD_0_5);
-
-	for (lane = 0; lane < 4; lane++)
-		dp->link_train.training_lane[lane] =
-				analogix_dp_get_lane_link_training(dp, lane);
-}
-
-	analogix_dp_link_train_restore(dp);
-
-	ret = analogix_dp_fast_link_train_detection(dp);
-	if (ret)
-		return ret;
-
-	if (analogix_dp_detect_sink_psr(dp)) {
-		ret = analogix_dp_enable_sink_psr(dp);
-		if (ret)
-			return ret;
-	}
-
 struct analogix_dp_device *
 analogix_dp_probe(struct device *dev, struct analogix_dp_plat_data *plat_data)
 {
@@ -2083,7 +2053,7 @@ analogix_dp_probe(struct device *dev, struct analogix_dp_plat_data *plat_data)
 	return dp;
 
 err_disable_clk:
-	clk_disable_unprepare(dp->clock);
+	clk_bulk_disable_unprepare(dp->nr_clks, dp->clks);
 	return ERR_PTR(ret);
 }
 EXPORT_SYMBOL_GPL(analogix_dp_probe);
