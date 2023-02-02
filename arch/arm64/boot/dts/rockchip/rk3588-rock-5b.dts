@@ -278,7 +278,7 @@
 };
 
 &vop_mmu {
-	status = "okay";
+	status = "disabled";
 };
 
 /* vp0 & vp1 splice for 8K output */
