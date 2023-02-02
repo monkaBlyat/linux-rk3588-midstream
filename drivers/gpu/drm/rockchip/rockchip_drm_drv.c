@@ -771,6 +771,30 @@ void rockchip_unregister_crtc_funcs(struct drm_crtc *crtc)
 	priv->crtc_funcs[pipe] = NULL;
 }
 
+static int rockchip_drm_fault_handler(struct iommu_domain *iommu,
+				      struct device *dev,
+				      unsigned long iova, int flags, void *arg)
+{
+	struct drm_device *drm_dev = arg;
+	struct rockchip_drm_private *priv = drm_dev->dev_private;
+	struct drm_crtc *crtc;
+
+	DRM_ERROR("iommu fault handler flags: 0x%x\n", flags);
+	drm_for_each_crtc(crtc, drm_dev) {
+		int pipe = drm_crtc_index(crtc);
+
+		if (priv->crtc_funcs[pipe] &&
+		    priv->crtc_funcs[pipe]->regs_dump)
+			priv->crtc_funcs[pipe]->regs_dump(crtc, NULL);
+
+		if (priv->crtc_funcs[pipe] &&
+		    priv->crtc_funcs[pipe]->debugfs_dump)
+			priv->crtc_funcs[pipe]->debugfs_dump(crtc, NULL);
+	}
+
+	return 0;
+}
+
 static int rockchip_drm_init_iommu(struct drm_device *drm_dev)
 {
 	struct rockchip_drm_private *private = drm_dev->dev_private;
@@ -792,6 +816,9 @@ static int rockchip_drm_init_iommu(struct drm_device *drm_dev)
 		  start, end);
 	drm_mm_init(&private->mm, start, end - start + 1);
 	mutex_init(&private->mm_lock);
+
+	iommu_set_fault_handler(private->domain, rockchip_drm_fault_handler,
+				drm_dev);
 
 	return 0;
 }
@@ -1335,6 +1362,10 @@ static int rockchip_drm_platform_probe(struct platform_device *pdev)
 		rockchip_drm_match_remove(dev);
 		return ret;
 	}
+
+	ret = dma_coerce_mask_and_coherent(dev, DMA_BIT_MASK(64));
+	if (ret)
+		return ret;
 
 	return 0;
 }

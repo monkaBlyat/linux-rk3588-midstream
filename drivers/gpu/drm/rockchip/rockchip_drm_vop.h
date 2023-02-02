@@ -303,13 +303,36 @@ struct vop_data {
 };
 
 /* interrupt define */
-#define DSP_HOLD_VALID_INTR		(1 << 0)
-#define FS_INTR				(1 << 1)
-#define LINE_FLAG_INTR			(1 << 2)
-#define BUS_ERROR_INTR			(1 << 3)
+#define DSP_HOLD_VALID_INTR		BIT(0)
+#define FS_INTR				BIT(1)
+#define LINE_FLAG_INTR			BIT(2)
+#define BUS_ERROR_INTR			BIT(3)
+#define FS_NEW_INTR			BIT(4)
+#define ADDR_SAME_INTR			BIT(5)
+#define LINE_FLAG1_INTR			BIT(6)
+#define WIN0_EMPTY_INTR			BIT(7)
+#define WIN1_EMPTY_INTR			BIT(8)
+#define WIN2_EMPTY_INTR			BIT(9)
+#define WIN3_EMPTY_INTR			BIT(10)
+#define HWC_EMPTY_INTR			BIT(11)
+#define POST_BUF_EMPTY_INTR		BIT(12)
+#define PWM_GEN_INTR			BIT(13)
+#define DMA_FINISH_INTR			BIT(14)
+#define FS_FIELD_INTR			BIT(15)
+#define FE_INTR				BIT(16)
+#define WB_UV_FIFO_FULL_INTR		BIT(17)
+#define WB_YRGB_FIFO_FULL_INTR		BIT(18)
+#define WB_COMPLETE_INTR		BIT(19)
 
 #define INTR_MASK			(DSP_HOLD_VALID_INTR | FS_INTR | \
-					 LINE_FLAG_INTR | BUS_ERROR_INTR)
+					 LINE_FLAG_INTR | BUS_ERROR_INTR | \
+					 FS_NEW_INTR | LINE_FLAG1_INTR | \
+					 WIN0_EMPTY_INTR | WIN1_EMPTY_INTR | \
+					 WIN2_EMPTY_INTR | WIN3_EMPTY_INTR | \
+					 HWC_EMPTY_INTR | \
+					 POST_BUF_EMPTY_INTR | \
+					 DMA_FINISH_INTR | FS_FIELD_INTR | \
+					 FE_INTR)
 
 #define DSP_HOLD_VALID_INTR_EN(x)	((x) << 4)
 #define FS_INTR_EN(x)			((x) << 5)
