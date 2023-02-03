@@ -1185,17 +1185,17 @@ static void pancsf_queue_submit_job(struct pancsf_queue *stream, struct pancsf_j
 		/* MOV32 rX+2, cs.latest_flush */
 		(2ull << 56) | (val_reg << 48) | job->call_info.latest_flush,
 
-		/* FLUSH_CACHE2.clean_inv_all.no_wait.signal(0) rX+2 */
-		(36ull << 56) | (0ull << 48) | (val_reg << 40) | (0 << 16) | 0x233,
-
-		/* WAIT(0) */
-		(3ull << 56) | (1 << 16),
+		/* FLUSH_CACHE2.clean_inv_l2.no_wait.signal(0) rX+2 */
+		(36ull << 56) | (0ull << 48) | (val_reg << 40) | (0 << 16) | 0x3,
 
 		/* MOV48 rX:rX+1, cs.start */
 		(1ull << 56) | (addr_reg << 48) | job->call_info.start,
 
 		/* MOV32 rX+2, cs.size */
 		(2ull << 56) | (val_reg << 48) | job->call_info.size,
+
+		/* WAIT(0) => waits for FLUSH_CACHE2 instruction */
+		(3ull << 56) | (1 << 16),
 
 		/* CALL rX:rX+1, rX+2 */
 		(32ull << 56) | (addr_reg << 40) | (val_reg << 32),
