@@ -770,7 +770,7 @@ pancsf_vm_unmap_range(struct pancsf_vm *vm, u64 va, size_t size)
 
 	mutex_lock(&vm->lock);
 	if (vm->destroyed) {
-		ret = -EINVAL;
+		ret = 0;
 		goto out_unlock;
 	}
 

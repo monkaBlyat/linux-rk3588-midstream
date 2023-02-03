@@ -638,7 +638,7 @@ pancsf_prog_csg_slot_locked(struct pancsf_device *pfdev, u32 csg_id, u32 priorit
 	csg_iface->input->endpoint_req = CSG_EP_REQ_COMPUTE(group->max_compute_cores) |
 					 CSG_EP_REQ_FRAGMENT(group->max_fragment_cores) |
 					 CSG_EP_REQ_TILER(group->max_tiler_cores) |
-					 CSG_EP_REQ_PRIORITY(csg_slot->priority);
+					 CSG_EP_REQ_PRIORITY(priority);
 	csg_iface->input->config = group->as_id;
 
 	if (group->suspend_buf)
@@ -1677,8 +1677,10 @@ tick_ctx_apply(struct pancsf_scheduler *sched, struct pancsf_sched_tick_ctx *ctx
 			int csg_id = group->csg_id;
 			u32 ep_req;
 
-			if (csg_id < 0)
+			if (csg_id < 0) {
+				new_csg_prio--;
 				continue;
+			}
 
 			csg_slot = &sched->csg_slots[csg_id];
 			csg_iface = pancsf_get_csg_iface(pfdev, csg_id);
