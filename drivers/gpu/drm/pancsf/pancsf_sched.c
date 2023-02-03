@@ -839,7 +839,7 @@ pancsf_handle_csg_progress_timer_evt(struct pancsf_device *pfdev, unsigned int c
 	struct pancsf_csg_slot *csg_slot = &sched->csg_slots[csg_id];
 	struct pancsf_group *group = csg_slot->group;
 
-	WARN_ON(1);
+	dev_warn(pfdev->dev, "CSG slot %d progress timeout\n", csg_id);
 	group->timedout = true;
 	mod_delayed_work(sched->wq, &sched->tick_work, 0);
 }
@@ -2514,7 +2514,7 @@ void pancsf_destroy_group(struct pancsf_file *pfile, u32 group_handle)
 
 		pancsf_group_queue_work(sched, group, term);
 	}
-	mutex_unlock(&pfdev->scheduler->lock);
+	mutex_unlock(&sched->lock);
 
 	pancsf_group_put(group);
 }
