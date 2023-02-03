@@ -498,6 +498,15 @@ static int pancsf_ioctl_group_create(struct drm_device *ddev, void *data,
 	return ret;
 }
 
+static int pancsf_ioctl_group_get_state(struct drm_device *ddev, void *data,
+					struct drm_file *file)
+{
+	struct pancsf_file *pfile = file->driver_priv;
+	struct drm_pancsf_group_get_state *args = data;
+
+	return pancsf_group_get_state(pfile, args);
+}
+
 static int pancsf_ioctl_tiler_heap_create(struct drm_device *ddev, void *data,
 					  struct drm_file *file)
 {
@@ -750,6 +759,7 @@ static const struct drm_ioctl_desc pancsf_drm_driver_ioctls[] = {
 	PANCSF_IOCTL(VM_UNMAP, vm_unmap, DRM_RENDER_ALLOW),
 	PANCSF_IOCTL(GROUP_CREATE, group_create, DRM_RENDER_ALLOW),
 	PANCSF_IOCTL(GROUP_DESTROY, group_destroy, DRM_RENDER_ALLOW),
+	PANCSF_IOCTL(GROUP_GET_STATE, group_get_state, DRM_RENDER_ALLOW),
 	PANCSF_IOCTL(TILER_HEAP_CREATE, tiler_heap_create, DRM_RENDER_ALLOW),
 	PANCSF_IOCTL(TILER_HEAP_DESTROY, tiler_heap_destroy, DRM_RENDER_ALLOW),
 	PANCSF_IOCTL(GROUP_SUBMIT, group_submit, DRM_RENDER_ALLOW),

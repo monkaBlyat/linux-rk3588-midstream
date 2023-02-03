@@ -31,6 +31,7 @@ enum drm_pancsf_ioctl_id {
 	DRM_PANCSF_VM_UNMAP,
 	DRM_PANCSF_GROUP_CREATE,
 	DRM_PANCSF_GROUP_DESTROY,
+	DRM_PANCSF_GROUP_GET_STATE,
 	DRM_PANCSF_TILER_HEAP_CREATE,
 	DRM_PANCSF_TILER_HEAP_DESTROY,
 	DRM_PANCSF_GROUP_SUBMIT,
@@ -48,6 +49,7 @@ enum drm_pancsf_ioctl_id {
 #define DRM_IOCTL_PANCSF_VM_UNMAP		DRM_IOWR(DRM_COMMAND_BASE + DRM_PANCSF_VM_UNMAP, struct drm_pancsf_vm_unmap)
 #define DRM_IOCTL_PANCSF_GROUP_CREATE		DRM_IOWR(DRM_COMMAND_BASE + DRM_PANCSF_GROUP_CREATE, struct drm_pancsf_group_create)
 #define DRM_IOCTL_PANCSF_GROUP_DESTROY		DRM_IOWR(DRM_COMMAND_BASE + DRM_PANCSF_GROUP_DESTROY, struct drm_pancsf_group_destroy)
+#define DRM_IOCTL_PANCSF_GROUP_GET_STATE	DRM_IOWR(DRM_COMMAND_BASE + DRM_PANCSF_GROUP_GET_STATE, struct drm_pancsf_group_get_state)
 #define DRM_IOCTL_PANCSF_TILER_HEAP_CREATE	DRM_IOWR(DRM_COMMAND_BASE + DRM_PANCSF_TILER_HEAP_CREATE, struct drm_pancsf_tiler_heap_create)
 #define DRM_IOCTL_PANCSF_TILER_HEAP_DESTROY	DRM_IOWR(DRM_COMMAND_BASE + DRM_PANCSF_TILER_HEAP_DESTROY, struct drm_pancsf_tiler_heap_destroy)
 #define DRM_IOCTL_PANCSF_GROUP_SUBMIT		DRM_IOWR(DRM_COMMAND_BASE + DRM_PANCSF_GROUP_SUBMIT, struct drm_pancsf_group_submit)
@@ -391,6 +393,26 @@ struct drm_pancsf_group_destroy {
 	/** @pad: Padding field, MBZ. */
 	__u32 pad;
 };
+
+struct drm_pancsf_group_get_state {
+	/** @group_handle: Handle of the group to query state on */
+	__u32 group_handle;
+
+#define DRM_PANCSF_GROUP_STATE_DESTROYED		0x1
+#define DRM_PANCSF_GROUP_STATE_TIMEDOUT			0x2
+#define DRM_PANCSF_GROUP_STATE_FATAL_FAULT		0x4
+	/** @state: Combination of DRM_PANCSF_GROUP_STATE_* flags encoding the
+	 *	    group state.
+	 */
+	__u32 state;
+
+	/** @fatal_queues: Bitmask of queues that faced fatal faults. */
+	__u32 fatal_queues;
+
+	/** @pad: MBZ */
+	__u32 pad;
+};
+
 
 struct drm_pancsf_tiler_heap_create {
 	/** @vm_id: VM ID the tiler heap should be mapped to */

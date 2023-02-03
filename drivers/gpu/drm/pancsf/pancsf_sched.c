@@ -2519,6 +2519,40 @@ void pancsf_destroy_group(struct pancsf_file *pfile, u32 group_handle)
 	pancsf_group_put(group);
 }
 
+int pancsf_group_get_state(struct pancsf_file *pfile,
+			   struct drm_pancsf_group_get_state *get_state)
+{
+	struct pancsf_group_pool *gpool = pfile->groups;
+	struct pancsf_device *pfdev = pfile->pfdev;
+	struct pancsf_scheduler *sched = pfdev->scheduler;
+	struct pancsf_group *group;
+
+	mutex_lock(&gpool->lock);
+	group = xa_load(&gpool->xa, get_state->group_handle);
+	if (group)
+		pancsf_group_get(group);
+	mutex_unlock(&gpool->lock);
+
+	if (!group)
+		return -EINVAL;
+
+	memset(get_state, 0, sizeof(*get_state));
+
+	mutex_lock(&sched->lock);
+	if (group->destroyed)
+		get_state->state |= DRM_PANCSF_GROUP_STATE_DESTROYED;
+	if (group->timedout)
+		get_state->state |= DRM_PANCSF_GROUP_STATE_TIMEDOUT;
+	if (group->fatal_streams) {
+		get_state->state |= DRM_PANCSF_GROUP_STATE_FATAL_FAULT;
+		get_state->fatal_queues = group->fatal_streams;
+	}
+	mutex_unlock(&sched->lock);
+
+	pancsf_group_put(group);
+	return 0;
+}
+
 int pancsf_group_pool_create(struct pancsf_file *pfile)
 {
 	struct pancsf_group_pool *gpool;

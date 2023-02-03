@@ -20,6 +20,8 @@ int pancsf_create_group(struct pancsf_file *pfile,
 			const struct drm_pancsf_queue_create *queue_args);
 void pancsf_destroy_group(struct pancsf_file *pfile,
 			  u32 group_handle);
+int pancsf_group_get_state(struct pancsf_file *pfile,
+			   struct drm_pancsf_group_get_state *get_state);
 
 struct pancsf_call_info {
 	u64 start;
