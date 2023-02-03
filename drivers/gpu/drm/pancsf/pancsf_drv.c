@@ -208,6 +208,9 @@ static void *pancsf_get_obj_array(struct drm_pancsf_obj_array *in, u32 min_strid
 				ret = -EFAULT;
 				break;
 			}
+
+			out_ptr += obj_size;
+			in_ptr += in->stride;
 		}
 	}
 
