@@ -51,6 +51,11 @@
 		mmc0 = &sdhci;
 		mmc1 = &sdmmc;
 		mmc2 = &sdio;
+		hdmi0 = &hdmi0;
+		dp0 = &dp0;
+		edp0 = &edp0;
+		hdptx0 = &hdptxphy0;
+		hdptxhdmi0 = &hdptxphy_hdmi0;
 	};
 
 	cluster0_opp_table: opp-table-cluster0 {
@@ -1679,7 +1684,7 @@
 		rockchip,u2phy-grf = <&usb2phy0_grf>;
 		rockchip,usb-grf = <&usb_grf>;
 		rockchip,usbdpphy-grf = <&usbdpphy0_grf>;
-		// rockchip,vo-grf = <&vo0_grf>;
+		rockchip,vo-grf = <&vo0_grf>;
 		clocks = <&cru CLK_USBDPPHY_MIPIDCPPHY_REF>,
 			 <&cru CLK_USBDP_PHY0_IMMORTAL>,
 			 <&cru PCLK_USBDPPHY0>,
@@ -3265,6 +3270,7 @@
 		};
 	};
 
+	/* n.b. This must be set as "hdmi0" in aliases! */
 	hdmi0: hdmi@fde80000 {
 		compatible = "rockchip,rk3588-dw-hdmi";
 		reg = <0x0 0xfde80000 0x0 0x20000>;

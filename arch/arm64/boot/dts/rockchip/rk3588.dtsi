@@ -10,6 +10,16 @@
 	compatible = "rockchip,rk3588";
 
 	aliases {
+		dp0 = &dp0;
+		dp1 = &dp1;
+		edp0 = &edp0;
+		edp1 = &edp1;
+		hdptx0 = &hdptxphy0;
+		hdptx1 = &hdptxphy1;
+		hdptxhdmi0 = &hdptxphy_hdmi0;
+		hdptxhdmi1 = &hdptxphy_hdmi1;
+		hdmi0 = &hdmi0;
+		hdmi1 = &hdmi1;
 		ethernet0 = &gmac0;
 		mmc0 = &sdhci;
 		mmc1 = &sdmmc;
@@ -212,6 +222,7 @@
 		};
 	};
 
+	/* n.b. This MUST be set as "hdmi1" in aliases! */
 	hdmi1: hdmi@fdea0000 {
 		compatible = "rockchip,rk3588-dw-hdmi";
 		reg = <0x0 0xfdea0000 0x0 0x20000>;
