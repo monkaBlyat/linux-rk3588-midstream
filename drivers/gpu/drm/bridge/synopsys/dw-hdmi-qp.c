@@ -2734,7 +2734,7 @@ __dw_hdmi_probe(struct platform_device *pdev,
 	if (ret < 0)
 		goto err_res;
 
-	hdmi_writel(hdmi, 0, MAINUNIT_0_INT_MASK_N); // FIXME this locks up!
+	hdmi_writel(hdmi, 0, MAINUNIT_0_INT_MASK_N);
 	hdmi_writel(hdmi, 0, MAINUNIT_1_INT_MASK_N);
 	hdmi_writel(hdmi, 428571429, TIMER_BASE_CONFIG0);
 
