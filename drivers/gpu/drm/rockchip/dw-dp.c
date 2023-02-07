@@ -3019,6 +3019,14 @@ static int dw_dp_bind(struct device *dev, struct device *master, void *data)
 	int ret;
 
 	if (!dp->left) {
+		dp->aux.dev = dev;
+		dp->aux.drm_dev = drm_dev;
+		dp->aux.name = dev_name(dev);
+		dp->aux.transfer = dw_dp_aux_transfer;
+		ret = drm_dp_aux_register(&dp->aux);
+		if (ret)
+			return ret;
+
 		drm_simple_encoder_init(drm_dev, encoder, DRM_MODE_ENCODER_TMDS);
 		drm_encoder_helper_add(encoder, &dw_dp_encoder_helper_funcs);
 
@@ -3066,6 +3074,9 @@ static void dw_dp_unbind(struct device *dev, struct device *master, void *data)
 	pm_runtime_disable(dp->dev);
 
 	drm_encoder_cleanup(&dp->encoder);
+
+	if (!dp->left)
+		dw_dp_aux_unregister(dp);
 }
 
 static const struct component_ops dw_dp_component_ops = {
@@ -3215,17 +3226,6 @@ static int dw_dp_probe(struct platform_device *pdev)
 		return ret;
 
 	ret = devm_add_action_or_reset(dev, dw_dp_unregister_audio_driver, dp);
-	if (ret)
-		return ret;
-
-	dp->aux.dev = dev;
-	dp->aux.name = dev_name(dev);
-	dp->aux.transfer = dw_dp_aux_transfer;
-	ret = drm_dp_aux_register(&dp->aux);
-	if (ret)
-		return ret;
-
-	ret = devm_add_action_or_reset(dev, dw_dp_aux_unregister, dp);
 	if (ret)
 		return ret;
 
