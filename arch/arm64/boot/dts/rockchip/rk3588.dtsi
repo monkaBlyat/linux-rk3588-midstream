@@ -166,6 +166,52 @@
 		reg = <0x0 0xfd5e4000 0x0 0x100>;
 	};
 
+	dp1: dp@fde60000 {
+		compatible = "rockchip,rk3588-dp";
+		reg = <0x0 0xfde60000 0x0 0x4000>;
+		interrupts = <GIC_SPI 162 IRQ_TYPE_LEVEL_HIGH 0>;
+		clocks = <&cru PCLK_DP1>, <&cru CLK_AUX16M_1>,
+			 <&cru MCLK_I2S8_8CH_TX>, <&cru MCLK_SPDIF5_DP1>,
+			 <&hclk_vo0>;
+		clock-names = "apb", "aux", "i2s", "spdif", "hclk";
+		assigned-clocks = <&cru CLK_AUX16M_1>;
+		assigned-clock-rates = <16000000>;
+		resets = <&cru SRST_DP1>;
+		phys = <&usbdp_phy1_dp>;
+		power-domains = <&power RK3588_PD_VO0>;
+		#sound-dai-cells = <1>;
+		status = "disabled";
+
+		ports {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			dp1_in: port@0 {
+				reg = <0>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				dp1_in_vp0: endpoint@0 {
+					reg = <0>;
+					remote-endpoint = <&vp0_out_dp1>;
+					status = "disabled";
+				};
+
+				dp1_in_vp1: endpoint@1 {
+					reg = <1>;
+					remote-endpoint = <&vp1_out_dp1>;
+					status = "disabled";
+				};
+
+				dp1_in_vp2: endpoint@2 {
+					reg = <2>;
+					remote-endpoint = <&vp2_out_dp1>;
+					status = "disabled";
+				};
+			};
+		};
+	};
+
 	hdmi1: hdmi@fdea0000 {
 		compatible = "rockchip,rk3588-dw-hdmi";
 		reg = <0x0 0xfdea0000 0x0 0x20000>;
@@ -605,14 +651,14 @@
 
 &display_subsystem {
 	route {
-/*		route_dp1: route-dp1 {
+		route_dp1: route-dp1 {
 			status = "disabled";
 			logo,uboot = "logo.bmp";
 			logo,kernel = "logo_kernel.bmp";
 			logo,mode = "center";
 			charge_logo,mode = "center";
 			connect = <&vp1_out_dp1>;
-		};*/
+		};
 
 		route_hdmi1: route-hdmi1 {
 			status = "disabled";
@@ -626,11 +672,11 @@
 };
 
 &vp0 {
-/*	vp0_out_dp1: endpoint@3 {
+	vp0_out_dp1: endpoint@3 {
 		reg = <3>;
 		remote-endpoint = <&dp1_in_vp0>;
 	};
-*/
+
 	vp0_out_edp1: endpoint@4 {
 		reg = <4>;
 		remote-endpoint = <&edp1_in_vp0>;
@@ -643,11 +689,11 @@
 };
 
 &vp1 {
-/*	vp1_out_dp1: endpoint@3 {
+	vp1_out_dp1: endpoint@3 {
 		reg = <3>;
 		remote-endpoint = <&dp1_in_vp1>;
 	};
-*/
+
 	vp1_out_edp1: endpoint@4 {
 		reg = <4>;
 		remote-endpoint = <&edp1_in_vp1>;
@@ -660,11 +706,11 @@
 };
 
 &vp2 {
-/*	vp2_out_dp1: endpoint@5 {
+	vp2_out_dp1: endpoint@5 {
 		reg = <5>;
 		remote-endpoint = <&dp1_in_vp2>;
 	};
-*/
+
 	vp2_out_edp1: endpoint@6 {
 		reg = <6>;
 		remote-endpoint = <&edp1_in_vp2>;
