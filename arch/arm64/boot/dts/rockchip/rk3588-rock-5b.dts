@@ -190,7 +190,7 @@
 };
 
 &display_subsystem {
-/*	route {
+	route {
 		route_hdmi0: route-hdmi0 {
 			status = "okay";
 			logo,uboot = "logo.bmp";
@@ -198,6 +198,15 @@
 			logo,mode = "center";
 			charge_logo,mode = "center";
 			connect = <&vp0_out_hdmi0>;
+		};
+
+		route_edp0: route-edp0 {
+			status = "disabled";
+			logo,uboot = "logo.bmp";
+			logo,kernel = "logo_kernel.bmp";
+			logo,mode = "center";
+			charge_logo,mode = "center";
+			connect = <&vp0_out_edp0>;
 		};
 
 		route_hdmi1: route-hdmi1 {
@@ -208,15 +217,24 @@
 			charge_logo,mode = "center";
 			connect = <&vp1_out_hdmi1>;
 		};
-	};*/
+
+		route_edp1: route-edp1 {
+			status = "disabled";
+			logo,uboot = "logo.bmp";
+			logo,kernel = "logo_kernel.bmp";
+			logo,mode = "center";
+			charge_logo,mode = "center";
+			connect = <&vp1_out_edp1>;
+		};
+	};
 };
 
 &hdmi0 {
-	status = "disabled";
+	status = "okay";
 };
 
 &hdmi0_in_vp0 {
-	status = "disabled";
+	status = "okay";
 };
 
 &hdmi0_in_vp1 {
@@ -231,8 +249,32 @@
 	status = "okay";
 };
 
-&hdmi1 {
+&hdptxphy_hdmi0 {
+	status = "okay";
+};
+
+&edp0 {
 	status = "disabled";
+};
+
+&edp0_in_vp0 {
+	status = "disabled";
+};
+
+&edp0_in_vp1 {
+	status = "disabled";
+};
+
+&edp0_in_vp2 {
+	status = "disabled";
+};
+
+&hdptxphy0 {
+	status = "disabled";
+};
+
+&hdmi1 {
+	status = "okay";
 	pinctrl-names = "default";
 	pinctrl-0 = <&hdmim0_tx1_cec &hdmim0_tx1_hpd &hdmim1_tx1_scl &hdmim1_tx1_sda>;
 };
@@ -242,7 +284,7 @@
 };
 
 &hdmi1_in_vp1 {
-	status = "disabled";
+	status = "okay";
 };
 
 &hdmi1_in_vp2 {
@@ -253,12 +295,30 @@
 	status = "okay";
 };
 
-&hdptxphy_hdmi0 {
+&hdptxphy_hdmi1 {
 	status = "okay";
 };
 
-&hdptxphy_hdmi1 {
-	status = "okay";
+&edp1 {
+	status = "disabled";
+	pinctrl-names = "default";
+	pinctrl-0 = <&hdmim0_tx1_cec &hdmim0_tx1_hpd &hdmim1_tx1_scl &hdmim1_tx1_sda>;
+};
+
+&edp1_in_vp0 {
+	status = "disabled";
+};
+
+&edp1_in_vp1 {
+	status = "disabled";
+};
+
+&edp1_in_vp2 {
+	status = "disabled";
+};
+
+&hdptxphy1 {
+	status = "disabled";
 };
 
 &i2s5_8ch {
@@ -278,7 +338,7 @@
 };
 
 &vop_mmu {
-	status = "disabled";
+	status = "disabled"; // broken for now - vop can work without it
 };
 
 /* vp0 & vp1 splice for 8K output */
@@ -507,7 +567,7 @@
 };
 
 &route_dp0 {
-	status = "disabled";
+	status = "okay";
 	connect = <&vp2_out_dp0>;
 };
 
