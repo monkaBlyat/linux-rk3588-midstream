@@ -30,7 +30,7 @@
 		cma {
 			compatible = "shared-dma-pool";
 			reusable;
-			size = <0x0 (256 * 0x100000)>;
+			size = <0x0 (16 * 0x100000)>;
 			alloc-ranges = <0x0 0x0 0x1 0x0>;
 			linux,cma-default;
 		};
@@ -380,7 +380,7 @@
 };
 
 &vop_mmu {
-	status = "disabled"; // broken for now - vop can work without it
+	status = "okay";
 };
 
 /* vp0 & vp1 splice for 8K output */

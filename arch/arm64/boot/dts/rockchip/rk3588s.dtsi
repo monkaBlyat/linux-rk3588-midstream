@@ -3132,7 +3132,7 @@
 			      "dclk_vp1",
 			      "dclk_vp2",
 			      "dclk_vp3";
-		//iommus = <&vop_mmu>;
+		iommus = <&vop_mmu>;
 		power-domains = <&power RK3588_PD_VOP>;
 		rockchip,grf = <&sys_grf>;
 		rockchip,vop-grf = <&vop_grf>;
