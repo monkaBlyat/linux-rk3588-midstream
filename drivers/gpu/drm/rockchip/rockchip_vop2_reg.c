@@ -12,7 +12,7 @@
 
 #include <drm/drm_fourcc.h>
 #include <drm/drm_print.h>
-#include "rockchip_drm_vop.h"
+#include "rockchip_drm_vop2.h"
 #include "rockchip_vop_reg.h"
 #include "rockchip_drm_drv.h"
 
@@ -468,41 +468,41 @@ static const int rk3568_vop_intrs[] = {
 static const struct vop_intr rk3568_vp0_intr = {
 	.intrs = rk3568_vop_intrs,
 	.nintrs = ARRAY_SIZE(rk3568_vop_intrs),
-	.line_flag_num[0] = VOP_REG(RK3568_VP0_LINE_FLAG, 0x1fff, 0),
-	.line_flag_num[1] = VOP_REG(RK3568_VP0_LINE_FLAG, 0x1fff, 16),
-	.status = VOP_REG(RK3568_VP0_INT_STATUS, 0xffff, 0),
-	.enable = VOP_REG_MASK(RK3568_VP0_INT_EN, 0xffff, 0),
-	.clear = VOP_REG_MASK(RK3568_VP0_INT_CLR, 0xffff, 0),
+	.line_flag_num[0] = VOP_REG(RK3568_VP_LINE_FLAG(0), 0x1fff, 0),
+	.line_flag_num[1] = VOP_REG(RK3568_VP_LINE_FLAG(0), 0x1fff, 16),
+	.status = VOP_REG(RK3568_VP_INT_STATUS(0), 0xffff, 0),
+	.enable = VOP_REG_MASK(RK3568_VP_INT_EN(0), 0xffff, 0),
+	.clear = VOP_REG_MASK(RK3568_VP_INT_CLR(0), 0xffff, 0),
 };
 
 static const struct vop_intr rk3568_vp1_intr = {
 	.intrs = rk3568_vop_intrs,
 	.nintrs = ARRAY_SIZE(rk3568_vop_intrs),
-	.line_flag_num[0] = VOP_REG(RK3568_VP1_LINE_FLAG, 0x1fff, 0),
-	.line_flag_num[1] = VOP_REG(RK3568_VP1_LINE_FLAG, 0x1fff, 16),
-	.status = VOP_REG(RK3568_VP1_INT_STATUS, 0xffff, 0),
-	.enable = VOP_REG_MASK(RK3568_VP1_INT_EN, 0xffff, 0),
-	.clear = VOP_REG_MASK(RK3568_VP1_INT_CLR, 0xffff, 0),
+	.line_flag_num[0] = VOP_REG(RK3568_VP_LINE_FLAG(1), 0x1fff, 0),
+	.line_flag_num[1] = VOP_REG(RK3568_VP_LINE_FLAG(1), 0x1fff, 16),
+	.status = VOP_REG(RK3568_VP_INT_STATUS(1), 0xffff, 0),
+	.enable = VOP_REG_MASK(RK3568_VP_INT_EN(1), 0xffff, 0),
+	.clear = VOP_REG_MASK(RK3568_VP_INT_CLR(1), 0xffff, 0),
 };
 
 static const struct vop_intr rk3568_vp2_intr = {
 	.intrs = rk3568_vop_intrs,
 	.nintrs = ARRAY_SIZE(rk3568_vop_intrs),
-	.line_flag_num[0] = VOP_REG(RK3568_VP2_LINE_FLAG, 0x1fff, 0),
-	.line_flag_num[1] = VOP_REG(RK3568_VP2_LINE_FLAG, 0x1fff, 16),
-	.status = VOP_REG(RK3568_VP2_INT_STATUS, 0xffff, 0),
-	.enable = VOP_REG_MASK(RK3568_VP2_INT_EN, 0xffff, 0),
-	.clear = VOP_REG_MASK(RK3568_VP2_INT_CLR, 0xffff, 0),
+	.line_flag_num[0] = VOP_REG(RK3568_VP_LINE_FLAG(2), 0x1fff, 0),
+	.line_flag_num[1] = VOP_REG(RK3568_VP_LINE_FLAG(2), 0x1fff, 16),
+	.status = VOP_REG(RK3568_VP_INT_STATUS(2), 0xffff, 0),
+	.enable = VOP_REG_MASK(RK3568_VP_INT_EN(2), 0xffff, 0),
+	.clear = VOP_REG_MASK(RK3568_VP_INT_CLR(2), 0xffff, 0),
 };
 
 static const struct vop_intr rk3588_vp3_intr = {
 	.intrs = rk3568_vop_intrs,
 	.nintrs = ARRAY_SIZE(rk3568_vop_intrs),
-	.line_flag_num[0] = VOP_REG(RK3588_VP3_LINE_FLAG, 0x1fff, 0),
-	.line_flag_num[1] = VOP_REG(RK3588_VP3_LINE_FLAG, 0x1fff, 16),
-	.status = VOP_REG(RK3588_VP3_INT_STATUS, 0xffff, 0),
-	.enable = VOP_REG_MASK(RK3588_VP3_INT_EN, 0xffff, 0),
-	.clear = VOP_REG_MASK(RK3588_VP3_INT_CLR, 0xffff, 0),
+	.line_flag_num[0] = VOP_REG(RK3588_VP_LINE_FLAG(3), 0x1fff, 0),
+	.line_flag_num[1] = VOP_REG(RK3588_VP_LINE_FLAG(3), 0x1fff, 16),
+	.status = VOP_REG(RK3588_VP_INT_STATUS(3), 0xffff, 0),
+	.enable = VOP_REG_MASK(RK3588_VP_INT_EN(3), 0xffff, 0),
+	.clear = VOP_REG_MASK(RK3588_VP_INT_CLR(3), 0xffff, 0),
 };
 
 static const struct vop2_dsc_regs rk3588_vop_dsc_8k_regs = {

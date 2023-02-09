@@ -14,7 +14,7 @@
 #include <linux/module.h>
 #include <linux/nvmem-provider.h>
 #include <linux/reset.h>
-//#include <linux/rockchip/cpu.h>
+#include <linux/soc/rockchip/cpu.h>
 #include <linux/slab.h>
 #include <linux/of.h>
 #include <linux/of_platform.h>

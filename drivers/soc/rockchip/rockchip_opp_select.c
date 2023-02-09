@@ -1185,7 +1185,7 @@ void rockchip_get_scale_volt_sel(struct device *dev, char *lkg_name,
 }
 EXPORT_SYMBOL(rockchip_get_scale_volt_sel);
 
-struct opp_table *rockchip_set_opp_prop_name(struct device *dev, int process,
+int rockchip_set_opp_prop_name(struct device *dev, int process,
 					     int volt_sel)
 {
 	char name[MAX_PROP_NAME_LEN];
@@ -1199,7 +1199,7 @@ struct opp_table *rockchip_set_opp_prop_name(struct device *dev, int process,
 	} else if (volt_sel >= 0) {
 		snprintf(name, MAX_PROP_NAME_LEN, "L%d", volt_sel);
 	} else {
-		return NULL;
+		return -EINVAL;
 	}
 
 	return dev_pm_opp_set_prop_name(dev, name);

@@ -54,6 +54,10 @@
 	clock_in_out = "output";
 	phy-handle = <&rgmii_phy1>;
 	phy-mode = "rgmii-rxid";
+	snps,reset-gpio = <&gpio3 RK_PB7 GPIO_ACTIVE_LOW>;
+	snps,reset-active-low;
+	/* Reset time is 20ms, 100ms for rtl8211f */
+	snps,reset-delays-us = <0 20000 100000>;
 	pinctrl-0 = <&gmac1_miim
 		     &gmac1_tx_bus2
 		     &gmac1_rx_bus2
@@ -61,6 +65,7 @@
 		     &gmac1_rgmii_bus>;
 	pinctrl-names = "default";
 	tx_delay = <0x3a>;
+	rx_delay = <0x3e>;
 	status = "okay";
 };
 

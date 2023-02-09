@@ -15,7 +15,7 @@
 
 #include <drm/drm_of.h>
 #include <drm/drm_crtc_helper.h>
-#include <drm/drm_dsc.h>
+#include <drm/display/drm_dsc.h>
 #include <drm/drm_edid.h>
 #include <drm/bridge/dw_hdmi.h>
 #include <drm/drm_edid.h>
@@ -26,7 +26,7 @@
 #include <uapi/linux/videodev2.h>
 
 #include "rockchip_drm_drv.h"
-#include "rockchip_drm_vop.h"
+#include "rockchip_drm_vop2.h"
 
 #define HIWORD_UPDATE(val, mask)	(val | (mask) << 16)
 

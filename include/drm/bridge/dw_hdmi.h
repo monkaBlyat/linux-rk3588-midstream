@@ -7,6 +7,7 @@
 #define __DW_HDMI__
 
 #include <drm/drm_property.h>
+#include <drm/drm_edid.h>
 #include <sound/hdmi-codec.h>
 #include <media/cec.h>
 
@@ -87,7 +88,7 @@ enum {
 
 enum dw_hdmi_phy_type {
 	DW_HDMI_PHY_DWC_HDMI_TX_PHY = 0x00,
-	DW_HDMI_PHY_DWC_MHL_PHY_HEAC = 0xb2,
+DW_HDMI_PHY_DWC_MHL_PHY_HEAC = 0xb2,
 	DW_HDMI_PHY_DWC_MHL_PHY = 0xc2,
 	DW_HDMI_PHY_DWC_HDMI_3D_TX_PHY_HEAC = 0xe2,
 	DW_HDMI_PHY_DWC_HDMI_3D_TX_PHY = 0xf2,
@@ -291,6 +292,7 @@ void dw_hdmi_set_output_type(struct dw_hdmi *hdmi, u64 val);
 bool dw_hdmi_get_output_whether_hdmi(struct dw_hdmi *hdmi);
 int dw_hdmi_get_output_type_cap(struct dw_hdmi *hdmi);
 void dw_hdmi_set_cec_adap(struct dw_hdmi *hdmi, struct cec_adapter *adap);
+
 
 void dw_hdmi_qp_unbind(struct dw_hdmi_qp *hdmi);
 struct dw_hdmi_qp *dw_hdmi_qp_bind(struct platform_device *pdev,

@@ -83,6 +83,13 @@ config PHY_ROCKCHIP_PCIE
 	help
 	  Enable this to support the Rockchip PCIe PHY.
 
+config PHY_ROCKCHIP_SAMSUNG_HDPTX
+	tristate "Rockchip Samsung HDMI/DP Combo PHY driver"
+	depends on OF && (ARCH_ROCKCHIP || COMPILE_TEST)
+	select GENERIC_PHY
+	help
+	  Support for Rockchip HDMI/DP Combo PHY with Samsung IP block.
+
 config PHY_ROCKCHIP_SAMSUNG_HDPTX_HDMI
 	tristate "Rockchip Samsung HDMI/DP Combo PHY HDMI driver"
 	depends on OF && (ARCH_ROCKCHIP || COMPILE_TEST)
@@ -114,3 +121,12 @@ config PHY_ROCKCHIP_USB
 	select GENERIC_PHY
 	help
 	  Enable this to support the Rockchip USB 2.0 PHY.
+
+config PHY_ROCKCHIP_USBDP
+	tristate "Rockchip USBDP COMBO PHY Driver"
+	depends on ARCH_ROCKCHIP && OF
+	select GENERIC_PHY
+	select TYPEC
+	help
+	  Enable this to support the Rockchip USB3.0/DP
+	  combo PHY with Samsung IP block.
