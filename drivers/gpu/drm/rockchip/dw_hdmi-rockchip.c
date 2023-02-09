@@ -3254,7 +3254,6 @@ static int dw_hdmi_rockchip_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	id = of_alias_get_id(pdev->dev.of_node, "hdmi");
-printk("got HDMI ID #%d\n", id);
 	if (id < 0)
 		id = 0;
 
