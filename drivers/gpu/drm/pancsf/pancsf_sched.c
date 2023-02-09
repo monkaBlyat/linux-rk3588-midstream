@@ -2131,7 +2131,7 @@ static void pancsf_ping_work(struct work_struct *work)
 	mutex_unlock(&sched->lock);
 
 	if (reset_pending)
-		goto out;
+		return;
 
 	if (!wait_event_timeout(sched->reqs_acked,
 				!(sched->pending_reqs & GLB_PING),
@@ -2152,8 +2152,6 @@ static void pancsf_ping_work(struct work_struct *work)
 				 &sched->ping_work,
 				 msecs_to_jiffies(12000));
 	}
-
-out:
 }
 
 static int pancsf_sched_pre_reset(struct pancsf_device *pfdev)
