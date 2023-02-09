@@ -579,6 +579,7 @@ static int upphy_set_typec_default_mapping(struct rockchip_udphy *udphy)
 	}
 
 	udphy->mode = UDPHY_MODE_DP_USB;
+	udphy->mode_change = true;
 
 	return 0;
 }
@@ -824,7 +825,7 @@ static int udphy_power_on(struct rockchip_udphy *udphy, u8 mode)
 	int ret;
 
 	if (!(udphy->mode & mode)) {
-		dev_info(udphy->dev, "mode 0x%02x is not support\n", mode);
+		dev_info(udphy->dev, "mode 0x%02x is not supported\n", mode);
 		return 0;
 	}
 
@@ -838,8 +839,7 @@ static int udphy_power_on(struct rockchip_udphy *udphy, u8 mode)
 			udphy_u3_port_disable(udphy, false);
 	} else if (udphy->mode_change) {
 		udphy->mode_change = false;
-		udphy->status = UDPHY_MODE_NONE;
-		if (udphy->mode == UDPHY_MODE_DP)
+		if (!(udphy->mode & UDPHY_MODE_USB))
 			udphy_u3_port_disable(udphy, true);
 
 		ret = udphy_disable(udphy);
@@ -860,7 +860,7 @@ static int udphy_power_off(struct rockchip_udphy *udphy, u8 mode)
 	int ret;
 
 	if (!(udphy->mode & mode)) {
-		dev_info(udphy->dev, "mode 0x%02x is not support\n", mode);
+		dev_info(udphy->dev, "mode 0x%02x is not supported\n", mode);
 		return 0;
 	}
 
