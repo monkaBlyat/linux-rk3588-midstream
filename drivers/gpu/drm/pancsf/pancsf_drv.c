@@ -97,15 +97,26 @@ static int pancsf_ioctl_vm_destroy(struct drm_device *ddev, void *data,
 static int pancsf_ioctl_bo_create(struct drm_device *ddev, void *data,
 				  struct drm_file *file)
 {
+	struct pancsf_file *pfile = file->driver_priv;
 	struct pancsf_gem_object *bo;
 	struct drm_pancsf_bo_create *args = data;
+	struct pancsf_vm *vm = NULL;
 
 	if (!args->size || args->pad ||
 	    (args->flags & ~PANCSF_BO_FLAGS))
 		return -EINVAL;
 
-	bo = pancsf_gem_create_with_handle(file, ddev, args->size, args->flags,
+	if (args->vm_id) {
+		vm = pancsf_vm_pool_get_vm(pfile->vms, args->vm_id);
+		if (!vm)
+			return -EINVAL;
+	}
+
+	bo = pancsf_gem_create_with_handle(file, ddev, vm, args->size, args->flags,
 					   &args->handle);
+
+	pancsf_vm_put(vm);
+
 	if (IS_ERR(bo))
 		return PTR_ERR(bo);
 
@@ -559,6 +570,130 @@ static int pancsf_ioctl_tiler_heap_destroy(struct drm_device *ddev, void *data,
 	return pancsf_heap_destroy(pool, args->handle);
 }
 
+static int pancsf_ioctl_vm_bind_queue_create(struct drm_device *ddev, void *data,
+					     struct drm_file *file)
+{
+	struct pancsf_device *pfdev = ddev->dev_private;
+	struct pancsf_file *pfile = file->driver_priv;
+	struct drm_pancsf_vm_bind_queue_create *args = data;
+	int ret;
+
+	ret = pancsf_vm_bind_queue_pool_create_queue(pfdev, pfile->vm_bind_queues, args->priority);
+	if (ret < 0)
+		return ret;
+
+	args->handle = ret;
+	return 0;
+}
+
+static int pancsf_ioctl_vm_bind_queue_destroy(struct drm_device *ddev, void *data,
+					      struct drm_file *file)
+{
+	struct pancsf_file *pfile = file->driver_priv;
+	struct drm_pancsf_vm_bind_queue_destroy *args = data;
+
+	pancsf_vm_bind_queue_pool_destroy_queue(pfile->vm_bind_queues, args->handle);
+	return 0;
+}
+
+static int pancsf_vm_bind_job_add_deps(struct drm_file *file, struct pancsf_vm_bind_job *job,
+				       struct drm_pancsf_sync_op *sync_ops, u32 sync_op_count)
+{
+	u32 i;
+
+	for (i = 0; i < sync_op_count; i++) {
+		struct dma_fence *fence;
+		int ret;
+
+		if (sync_ops[i].op_type != DRM_PANCSF_SYNC_OP_WAIT)
+			continue;
+
+		switch (sync_ops[i].handle_type) {
+		case DRM_PANCSF_SYNC_HANDLE_TYPE_SYNCOBJ:
+		case DRM_PANCSF_SYNC_HANDLE_TYPE_TIMELINE_SYNCOBJ:
+			ret = drm_syncobj_find_fence(file, sync_ops[i].handle,
+						     sync_ops[i].timeline_value,
+						     0, &fence);
+			if (ret)
+				return ret;
+
+			ret = pancsf_vm_bind_job_add_dep(job, fence);
+			if (ret) {
+				dma_fence_put(fence);
+				return ret;
+			}
+			break;
+
+		default:
+			return -EINVAL;
+		}
+	}
+
+	return 0;
+}
+
+static int pancsf_ioctl_vm_bind_submit(struct drm_device *ddev, void *data,
+				       struct drm_file *file)
+{
+	struct pancsf_sync_signal_array sync_signal_array = {};
+	struct pancsf_file *pfile = file->driver_priv;
+	struct drm_pancsf_vm_bind_submit *args = data;
+	struct pancsf_vm_bind_queue *queue = NULL;
+	struct drm_pancsf_vm_bind_op *bind_ops = NULL;
+	struct drm_pancsf_sync_op *sync_ops = NULL;
+	struct pancsf_vm_bind_job *job = NULL;
+	struct pancsf_vm *vm = NULL;
+	int ret = 0;
+
+	queue = pancsf_vm_bind_queue_pool_get_queue(pfile->vm_bind_queues, args->queue_handle);
+	if (!queue)
+		return -EINVAL;
+
+	vm = pancsf_vm_pool_get_vm(pfile->vms, args->vm_id);
+	if (!vm) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	bind_ops = pancsf_get_obj_array(&args->ops, DRM_PANCSF_VM_BIND_OP_MIN_SIZE, sizeof(*bind_ops));
+	sync_ops = pancsf_get_obj_array(&args->syncs, DRM_PANCSF_SYNC_OP_MIN_SIZE, sizeof(sync_ops));
+	if (!bind_ops || !sync_ops) {
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	ret = pancsf_collect_sync_signal_array(file, sync_ops, args->syncs.count, &sync_signal_array);
+	if (ret)
+		goto out;
+
+	job = pancsf_vm_bind_job_create(file, queue, vm, bind_ops, args->ops.count);
+	if (IS_ERR(job)) {
+		ret = PTR_ERR(job);
+		goto out;
+	}
+
+	ret = pancsf_vm_bind_job_add_deps(file, job, sync_ops, args->syncs.count);
+	if (ret)
+		goto out;
+
+	ret = pancsf_vm_bind_job_push(job);
+	if (ret)
+		goto out;
+
+	pancsf_attach_done_fence(file, pancsf_vm_bind_job_done_fence(job), &sync_signal_array);
+
+out:
+	if (ret && !IS_ERR_OR_NULL(job))
+		pancsf_vm_bind_job_destroy(job);
+
+	pancsf_free_sync_signal_array(&sync_signal_array);
+	kvfree(sync_ops);
+	kvfree(bind_ops);
+	pancsf_vm_put(vm);
+	pancsf_vm_bind_queue_put(queue);
+	return ret;
+}
+
 static int
 pancsf_open(struct drm_device *ddev, struct drm_file *file)
 {
@@ -631,6 +766,9 @@ static const struct drm_ioctl_desc pancsf_drm_driver_ioctls[] = {
 	PANCSF_IOCTL(TILER_HEAP_CREATE, tiler_heap_create, DRM_RENDER_ALLOW),
 	PANCSF_IOCTL(TILER_HEAP_DESTROY, tiler_heap_destroy, DRM_RENDER_ALLOW),
 	PANCSF_IOCTL(GROUP_SUBMIT, group_submit, DRM_RENDER_ALLOW),
+	PANCSF_IOCTL(VM_BIND_QUEUE_CREATE, vm_bind_queue_create, DRM_RENDER_ALLOW),
+	PANCSF_IOCTL(VM_BIND_QUEUE_DESTROY, vm_bind_queue_destroy, DRM_RENDER_ALLOW),
+	PANCSF_IOCTL(VM_BIND_SUBMIT, vm_bind_submit, DRM_RENDER_ALLOW),
 };
 
 static int pancsf_mmap_io(struct file *filp, struct vm_area_struct *vma)
@@ -707,7 +845,7 @@ static const struct drm_driver pancsf_drm_driver = {
 	.minor			= 0,
 
 	.gem_create_object	= pancsf_gem_create_object,
-	.prime_handle_to_fd	= drm_gem_prime_handle_to_fd,
+	.prime_handle_to_fd	= pancsf_gem_prime_handle_to_fd,
 	.prime_fd_to_handle	= drm_gem_prime_fd_to_handle,
 	.gem_prime_import_sg_table = pancsf_gem_prime_import_sg_table,
 	.gem_prime_mmap		= drm_gem_prime_mmap,

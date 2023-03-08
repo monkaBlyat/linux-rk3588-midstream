@@ -14,6 +14,7 @@ struct pancsf_vm;
 
 struct pancsf_gem_object {
 	struct drm_gem_shmem_object base;
+	struct pancsf_vm *exclusive_vm;
 };
 
 static inline
@@ -28,10 +29,16 @@ struct drm_gem_object *
 pancsf_gem_prime_import_sg_table(struct drm_device *ddev,
 				 struct dma_buf_attachment *attach,
 				 struct sg_table *sgt);
+int pancsf_gem_prime_handle_to_fd(struct drm_device *dev,
+				  struct drm_file *file_priv,
+				  uint32_t handle, uint32_t flags,
+				  int *prime_fd);
 
 struct pancsf_gem_object *
 pancsf_gem_create_with_handle(struct drm_file *file,
-			      struct drm_device *ddev, size_t size,
+			      struct drm_device *ddev,
+			      struct pancsf_vm *exclusive_vm,
+			      size_t size,
 			      u32 flags,
 			      uint32_t *handle);
 

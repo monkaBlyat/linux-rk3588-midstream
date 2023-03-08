@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0
 
 pancsf-y := \
+	pancsf_devfreq.o \
 	pancsf_device.o \
 	pancsf_drv.o \
 	pancsf_gem.o \
