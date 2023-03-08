@@ -4,10 +4,6 @@
  *
  * Copyright (c) 2014, Fuzhou Rockchip Electronics Co., Ltd
  * Copyright (C) 2016 PHYTEC Messtechnik GmbH
- *
- * Author: Chris Zhong <zyw@rock-chips.com>
- * Author: Zhang Qing <zhangqing@rock-chips.com>
- * Author: Wadim Egorov <w.egorov@phytec.de>
  */
 
 #include <linux/interrupt.h>

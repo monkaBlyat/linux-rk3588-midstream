@@ -30,6 +30,7 @@
 #define RK3588_CPU_CTRL			0x30
 
 #define VOLT_RM_TABLE_END		~1
+#define MAX_PROP_NAME_LEN		6
 
 struct volt_rm_table {
 	uint32_t volt;
@@ -40,6 +41,7 @@ struct rockchip_opp_info {
 	const struct rockchip_opp_data *data;
 	struct volt_rm_table *volt_rm_tbl;
 	struct regmap *grf;
+	struct regmap *dsu_grf;
 	u32 current_rm;
 	u32 reboot_freq;
 };
@@ -78,16 +80,26 @@ static int rk3588_cpu_set_read_margin(struct device *dev, struct rockchip_opp_in
 		return 0;
 	if (rm == opp_info->current_rm)
 		return 0;
-	if (!opp_info->grf)
-		return 0;
 
 	dev_dbg(dev, "set rm to %d\n", rm);
-	regmap_write(opp_info->grf, RK3588_MEMCFG_HSSPRF_LOW, 0x001c0000 | (rm << 2));
-	regmap_write(opp_info->grf, RK3588_MEMCFG_HSDPRF_LOW, 0x003c0000 | (rm << 2));
-	regmap_write(opp_info->grf, RK3588_MEMCFG_HSDPRF_HIGH, 0x003c0000 | (rm << 2));
-	regmap_write(opp_info->grf, RK3588_CPU_CTRL, 0x00200020);
-	udelay(1);
-	regmap_write(opp_info->grf, RK3588_CPU_CTRL, 0x00200000);
+	if (opp_info->grf) {
+		regmap_write(opp_info->grf, RK3588_MEMCFG_HSSPRF_LOW, 0x001c0000 | (rm << 2));
+		regmap_write(opp_info->grf, RK3588_MEMCFG_HSDPRF_LOW, 0x003c0000 | (rm << 2));
+		regmap_write(opp_info->grf, RK3588_MEMCFG_HSDPRF_HIGH, 0x003c0000 | (rm << 2));
+		regmap_write(opp_info->grf, RK3588_CPU_CTRL, 0x00200020);
+		udelay(1);
+		regmap_write(opp_info->grf, RK3588_CPU_CTRL, 0x00200000);
+	}
+	if (opp_info->dsu_grf) {
+		regmap_write(opp_info->dsu_grf, RK3588_MEMCFG_HSSPRF_LOW, 0x001c0000 | (rm << 2));
+		regmap_write(opp_info->dsu_grf, RK3588_MEMCFG_HSDPRF_LOW, 0x003c0000 | (rm << 2));
+		regmap_write(opp_info->dsu_grf, RK3588_MEMCFG_HSDPRF_HIGH, 0x003c0000 | (rm << 2));
+		regmap_write(opp_info->dsu_grf, RK3588_CPU_CTRL, 0x001c0000 | (rm << 2));
+		regmap_write(opp_info->dsu_grf, 0x38, 0x001c0000 | (rm << 2));
+		regmap_write(opp_info->dsu_grf, 0x18, 0x40004000);
+		udelay(1);
+		regmap_write(opp_info->dsu_grf, 0x18, 0x40000000);
+	}
 
 	opp_info->current_rm = rm;
 
@@ -323,6 +335,9 @@ static int rockchip_cpufreq_cluster_init(int cpu, struct cluster_info *cluster)
 		opp_info->grf = syscon_regmap_lookup_by_phandle(np, "rockchip,grf");
 		if (IS_ERR(opp_info->grf))
 			opp_info->grf = NULL;
+		opp_info->dsu_grf = syscon_regmap_lookup_by_phandle(np, "rockchip,dsu-grf");
+		if (IS_ERR(opp_info->dsu_grf))
+			opp_info->dsu_grf = NULL;
 		rockchip_get_volt_rm_table(dev, np, "rockchip,volt-mem-read-margin", &opp_info->volt_rm_tbl);
 
 		of_property_read_u32(np, "rockchip,reboot-freq", &opp_info->reboot_freq);

@@ -65,6 +65,7 @@ void displayid_iter_edid_begin(const struct drm_edid *drm_edid,
 
 	iter->drm_edid = drm_edid;
 }
+EXPORT_SYMBOL(displayid_iter_edid_begin);
 
 static const struct displayid_block *
 displayid_iter_block(const struct displayid_iter *iter)
@@ -125,8 +126,10 @@ __displayid_iter_next(struct displayid_iter *iter)
 			return block;
 	}
 }
+EXPORT_SYMBOL(__displayid_iter_next);
 
 void displayid_iter_end(struct displayid_iter *iter)
 {
 	memset(iter, 0, sizeof(*iter));
 }
+EXPORT_SYMBOL(displayid_iter_end);

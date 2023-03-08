@@ -2850,6 +2850,7 @@ static struct edid *dw_hdmi_get_edid(struct dw_hdmi *hdmi,
 		edid->width_cm, edid->height_cm);
 
 	hdmi->support_hdmi = drm_detect_hdmi_monitor(edid);
+	hdmi->support_hdmi = drm_detect_hdmi_monitor(edid);
 	hdmi->sink_has_audio = drm_detect_monitor_audio(edid);
 
 	return edid;

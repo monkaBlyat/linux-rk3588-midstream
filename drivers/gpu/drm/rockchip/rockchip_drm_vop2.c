@@ -13,6 +13,7 @@
 #include <drm/drm_debugfs.h>
 #include <drm/drm_flip_work.h>
 #include <drm/drm_fourcc.h>
+#include <drm/drm_framebuffer.h>
 #include <drm/drm_plane_helper.h>
 #include <drm/drm_probe_helper.h>
 #include <drm/drm_self_refresh_helper.h>
@@ -36,7 +37,6 @@
 #include <linux/of.h>
 #include <linux/of_device.h>
 #include <linux/of_graph.h>
-#include <linux/media-bus-format.h>
 #include <linux/pm_runtime.h>
 #include <linux/component.h>
 #include <linux/regmap.h>
@@ -45,11 +45,11 @@
 #include <linux/delay.h>
 #include <linux/swab.h>
 #include <linux/sort.h>
-
-//#include <linux/rockchip/cpu.h>
-//#include <soc/rockchip/rockchip_dmc.h>
-//#include <soc/rockchip/rockchip-system-status.h>
+#include <linux/soc/rockchip/cpu.h>
+#include <soc/rockchip/rockchip_dmc.h>
+#include <soc/rockchip/rockchip-system-status.h>
 #include <uapi/linux/videodev2.h>
+#include <uapi/linux/media-bus-format.h>
 
 #include "../drm_crtc_internal.h"
 #include "../drm_internal.h"
@@ -57,7 +57,7 @@
 #include "rockchip_drm_drv.h"
 #include "rockchip_drm_gem.h"
 #include "rockchip_drm_fb.h"
-#include "rockchip_drm_vop.h"
+#include "rockchip_drm_vop2.h"
 #include "rockchip_vop_reg.h"
 
 #define _REG_SET(vop2, name, off, reg, mask, v, relaxed) \
@@ -137,6 +137,7 @@
 
 #define to_vop2_win(x) container_of(x, struct vop2_win, base)
 #define to_vop2_plane_state(x) container_of(x, struct vop2_plane_state, base)
+#define to_wb_state(x) container_of(x, struct vop2_wb_connector_state, base)
 #define output_if_is_hdmi(x)		(x & (VOP_OUTPUT_IF_HDMI0 | VOP_OUTPUT_IF_HDMI1))
 #define output_if_is_dp(x)		(x & (VOP_OUTPUT_IF_DP0 | VOP_OUTPUT_IF_DP1))
 #define output_if_is_edp(x)		(x & (VOP_OUTPUT_IF_eDP0 | VOP_OUTPUT_IF_eDP1))
@@ -440,6 +441,32 @@ struct vop2_layer {
 	const struct vop2_layer_regs *regs;
 };
 
+struct vop2_wb_job {
+
+	bool pending;
+	/**
+	 * @fs_vsync_cnt: frame start vysnc counter,
+	 * used to get the write back complete event;
+	 */
+	uint32_t fs_vsync_cnt;
+};
+
+struct vop2_wb {
+	uint8_t vp_id;
+	struct drm_writeback_connector conn;
+	const struct vop2_wb_regs *regs;
+	struct vop2_wb_job jobs[VOP2_WB_JOB_MAX];
+	uint8_t job_index;
+
+	/**
+	 * @job_lock:
+	 *
+	 * spinlock to protect the job between vop2_wb_commit and vop2_wb_handler in isr.
+	 */
+	spinlock_t job_lock;
+
+};
+
 struct vop2_dsc {
 	uint8_t id;
 	uint8_t max_slice_num;
@@ -449,6 +476,25 @@ struct vop2_dsc {
 	char attach_vp_id;
 	const struct vop2_dsc_regs *regs;
 	struct vop2_power_domain *pd;
+};
+
+enum vop2_wb_format {
+	VOP2_WB_ARGB8888,
+	VOP2_WB_BGR888,
+	VOP2_WB_RGB565,
+	VOP2_WB_YUV420SP = 4,
+	VOP2_WB_INVALID = -1,
+};
+
+struct vop2_wb_connector_state {
+	struct drm_connector_state base;
+	dma_addr_t yrgb_addr;
+	dma_addr_t uv_addr;
+	enum vop2_wb_format format;
+	uint16_t scale_x_factor;
+	uint8_t scale_x_en;
+	uint8_t scale_y_en;
+	uint8_t vp_id;
 };
 
 struct vop2_video_port {
@@ -627,6 +673,7 @@ struct vop2 {
 	struct drm_device *drm_dev;
 	struct vop2_dsc dscs[ROCKCHIP_MAX_CRTC];
 	struct vop2_video_port vps[ROCKCHIP_MAX_CRTC];
+	struct vop2_wb wb;
 	struct dentry *debugfs;
 	struct drm_info_list *debugfs_files;
 	struct drm_prop_enum_list *plane_name_list;
@@ -702,8 +749,8 @@ struct vop2 {
 	int irq;
 
 	/*
-	 * Some globle resource are shared between all
-	 * the vidoe ports(crtcs), so we need a ref counter here.
+	 * Some global resources are shared between all video ports(crtcs), so
+	 * we need a ref counter here.
 	 */
 	unsigned int enable_count;
 	struct clk *hclk;
@@ -719,7 +766,7 @@ struct vop2 {
 	struct list_head pd_list_head;
 
 	struct vop2_layer layers[ROCKCHIP_MAX_LAYER];
-	/* must put at the end of the struct */
+	/* must be put at the end of the struct */
 	struct vop2_win win[];
 };
 
@@ -779,12 +826,12 @@ static inline struct vop2_video_port *to_vop2_video_port(struct drm_crtc *crtc)
 static void vop2_lock(struct vop2 *vop2)
 {
 	mutex_lock(&vop2->vop2_lock);
-//	rockchip_dmcfreq_lock();
+	rockchip_dmcfreq_lock();
 }
 
 static void vop2_unlock(struct vop2 *vop2)
 {
-//	rockchip_dmcfreq_unlock();
+	rockchip_dmcfreq_unlock();
 	mutex_unlock(&vop2->vop2_lock);
 }
 
@@ -874,11 +921,6 @@ static inline bool vop2_plane_active(struct drm_plane_state *pstate)
 		return true;
 }
 
-static bool soc_is_rk3566(void)
-{
-	return false;
-}
-
 static bool vop2_soc_is_rk3566(void)
 {
 	return soc_is_rk3566();
@@ -892,7 +934,6 @@ static bool vop2_is_mirror_win(struct vop2_win *win)
 static uint64_t vop2_soc_id_fixup(uint64_t soc_id)
 {
 	switch (soc_id) {
-/*
 	case 0x3566:
 		if (rockchip_get_cpu_version())
 			return 0x3566A;
@@ -903,7 +944,6 @@ static uint64_t vop2_soc_id_fixup(uint64_t soc_id)
 			return 0x3568A;
 		else
 			return 0x3568;
-*/
 	default:
 		return soc_id;
 	}
@@ -1370,6 +1410,26 @@ static inline void rk3588_vop2_cfg_done(struct drm_crtc *crtc)
 	vop2_writel(vop2, 0, val);
 }
 
+static inline void vop2_wb_cfg_done(struct vop2_video_port *vp)
+{
+	struct vop2 *vop2 = vp->vop2;
+	uint32_t val = RK3568_VOP2_WB_CFG_DONE | (RK3568_VOP2_WB_CFG_DONE << 16) |
+		       RK3568_VOP2_GLB_CFG_DONE_EN;
+	uint32_t done_bits;
+	unsigned long flags;
+
+	if (vop2->version == VOP_VERSION_RK3568) {
+		spin_lock_irqsave(&vop2->irq_lock, flags);
+		done_bits = vop2_pending_done_bits(vp);
+		val |= done_bits;
+		vop2_writel(vop2, 0, val);
+		spin_unlock_irqrestore(&vop2->irq_lock, flags);
+	} else {
+		vop2_writel(vop2, 0, val);
+	}
+
+}
+
 static inline void vop2_cfg_done(struct drm_crtc *crtc)
 {
 	struct vop2_video_port *vp = to_vop2_video_port(crtc);
@@ -1688,14 +1748,29 @@ static enum vop2_afbc_format vop2_convert_afbc_format(uint32_t format)
 	return VOP2_AFBC_FMT_INVALID;
 }
 
+static enum vop2_wb_format vop2_convert_wb_format(uint32_t format)
+{
+	switch (format) {
+	case DRM_FORMAT_ARGB8888:
+		return VOP2_WB_ARGB8888;
+	case DRM_FORMAT_BGR888:
+		return VOP2_WB_BGR888;
+	case DRM_FORMAT_RGB565:
+		return VOP2_WB_RGB565;
+	case DRM_FORMAT_NV12:
+		return VOP2_WB_YUV420SP;
+	default:
+		DRM_ERROR("unsupported wb format[%08x]\n", format);
+		return VOP2_WB_INVALID;
+	}
+}
+
 static void vop2_set_system_status(struct vop2 *vop2)
 {
-/*
 	if (hweight8(vop2->active_vp_mask) > 1)
 		rockchip_set_system_status(SYS_STATUS_DUALVIEW);
 	else
 		rockchip_clear_system_status(SYS_STATUS_DUALVIEW);
-*/
 }
 
 static bool vop2_win_rb_swap(uint32_t format)
@@ -2475,6 +2550,290 @@ static void vop2_core_clks_disable(struct vop2 *vop2)
 	clk_disable(vop2->hclk);
 }
 
+static void vop2_wb_connector_reset(struct drm_connector *connector)
+{
+	struct vop2_wb_connector_state *wb_state;
+
+	if (connector->state) {
+		__drm_atomic_helper_connector_destroy_state(connector->state);
+		kfree(connector->state);
+		connector->state = NULL;
+	}
+
+	wb_state = kzalloc(sizeof(*wb_state), GFP_KERNEL);
+	if (wb_state)
+		__drm_atomic_helper_connector_reset(connector, &wb_state->base);
+}
+
+static enum drm_connector_status
+vop2_wb_connector_detect(struct drm_connector *connector, bool force)
+{
+	return connector_status_connected;
+}
+
+static void vop2_wb_connector_destroy(struct drm_connector *connector)
+{
+	drm_connector_cleanup(connector);
+}
+
+static struct drm_connector_state *
+vop2_wb_connector_duplicate_state(struct drm_connector *connector)
+{
+	struct vop2_wb_connector_state *wb_state;
+
+	if (WARN_ON(!connector->state))
+		return NULL;
+
+	wb_state = kzalloc(sizeof(*wb_state), GFP_KERNEL);
+	if (!wb_state)
+		return NULL;
+
+	__drm_atomic_helper_connector_duplicate_state(connector, &wb_state->base);
+
+	return &wb_state->base;
+}
+
+static const struct drm_connector_funcs vop2_wb_connector_funcs = {
+	.reset = vop2_wb_connector_reset,
+	.detect = vop2_wb_connector_detect,
+	.fill_modes = drm_helper_probe_single_connector_modes,
+	.destroy = vop2_wb_connector_destroy,
+	.atomic_duplicate_state = vop2_wb_connector_duplicate_state,
+	.atomic_destroy_state = drm_atomic_helper_connector_destroy_state,
+};
+
+static int vop2_wb_connector_get_modes(struct drm_connector *connector)
+{
+	struct drm_display_mode *mode;
+	int i;
+
+	for (i = 0; i < 2; i++) {
+		mode = drm_mode_create(connector->dev);
+		if (!mode)
+			break;
+
+		mode->type = DRM_MODE_TYPE_PREFERRED | DRM_MODE_TYPE_DRIVER;
+		mode->clock = 148500 >> i;
+		mode->hdisplay = 1920 >> i;
+		mode->hsync_start = 1930 >> i;
+		mode->hsync_end = 1940 >> i;
+		mode->htotal = 1990 >> i;
+		mode->vdisplay = 1080 >> i;
+		mode->vsync_start = 1090 >> i;
+		mode->vsync_end = 1100 >> i;
+		mode->vtotal = 1110 >> i;
+		mode->flags = 0;
+
+		drm_mode_set_name(mode);
+		drm_mode_probed_add(connector, mode);
+	}
+	return i;
+}
+
+static enum drm_mode_status
+vop2_wb_connector_mode_valid(struct drm_connector *connector,
+			       struct drm_display_mode *mode)
+{
+
+	struct drm_writeback_connector *wb_conn;
+	struct vop2_wb *wb;
+	struct vop2 *vop2;
+	int w, h;
+
+	wb_conn = container_of(connector, struct drm_writeback_connector, base);
+	wb = container_of(wb_conn, struct vop2_wb, conn);
+	vop2 = container_of(wb, struct vop2, wb);
+	w = mode->hdisplay;
+	h = mode->vdisplay;
+
+
+	if (w > vop2->data->wb->max_output.width)
+		return MODE_BAD_HVALUE;
+
+	if (h > vop2->data->wb->max_output.height)
+		return MODE_BAD_VVALUE;
+
+	return MODE_OK;
+}
+
+static int vop2_wb_encoder_atomic_check(struct drm_encoder *encoder,
+			       struct drm_crtc_state *cstate,
+			       struct drm_connector_state *conn_state)
+{
+	struct vop2_wb_connector_state *wb_state = to_wb_state(conn_state);
+	struct rockchip_crtc_state *vcstate = to_rockchip_crtc_state(cstate);
+	struct vop2_video_port *vp = to_vop2_video_port(cstate->crtc);
+	struct drm_framebuffer *fb;
+	struct drm_gem_object *obj, *uv_obj;
+	struct rockchip_gem_object *rk_obj, *rk_uv_obj;
+
+
+
+	if (!conn_state->writeback_job || !conn_state->writeback_job->fb)
+		return 0;
+
+	fb = conn_state->writeback_job->fb;
+	DRM_DEV_DEBUG(vp->vop2->dev, "%d x % d\n", fb->width, fb->height);
+
+	if (!fb->format->is_yuv && is_yuv_output(vcstate->bus_format)) {
+		DRM_ERROR("YUV2RGB is not supported by writeback\n");
+		return -EINVAL;
+	}
+
+	if ((fb->width > cstate->mode.hdisplay) ||
+	    ((fb->height != cstate->mode.vdisplay) &&
+	    (fb->height != (cstate->mode.vdisplay >> 1)))) {
+		DRM_DEBUG_KMS("Invalid framebuffer size %ux%u, Only support x scale down and 1/2 y scale down\n",
+				fb->width, fb->height);
+		return -EINVAL;
+	}
+
+	wb_state->scale_x_factor = vop2_scale_factor(SCALE_DOWN, VOP2_SCALE_DOWN_BIL,
+						      cstate->mode.hdisplay, fb->width);
+	wb_state->scale_x_en = (fb->width < cstate->mode.hdisplay) ? 1 : 0;
+	wb_state->scale_y_en = (fb->height < cstate->mode.vdisplay) ? 1 : 0;
+
+	wb_state->format = vop2_convert_wb_format(fb->format->format);
+	if (wb_state->format < 0) {
+		DRM_DEBUG_KMS("Invalid pixel format %p4cc\n", &fb->format->format);
+		return -EINVAL;
+	}
+
+	wb_state->vp_id = vp->id;
+	obj = fb->obj[0];
+	rk_obj = to_rockchip_obj(obj);
+	wb_state->yrgb_addr = rk_obj->dma_addr + fb->offsets[0];
+
+	if (fb->format->is_yuv) {
+		uv_obj = fb->obj[1];
+		rk_uv_obj = to_rockchip_obj(uv_obj);
+
+		wb_state->uv_addr = rk_uv_obj->dma_addr + fb->offsets[1];
+	}
+
+	return 0;
+}
+
+static const struct drm_encoder_helper_funcs vop2_wb_encoder_helper_funcs = {
+	.atomic_check = vop2_wb_encoder_atomic_check,
+};
+
+static const struct drm_connector_helper_funcs vop2_wb_connector_helper_funcs = {
+	.get_modes = vop2_wb_connector_get_modes,
+	.mode_valid = vop2_wb_connector_mode_valid,
+};
+
+
+static int vop2_wb_connector_init(struct vop2 *vop2, int nr_crtcs)
+{
+	const struct vop2_data *vop2_data = vop2->data;
+	int ret;
+
+	vop2->wb.regs = vop2_data->wb->regs;
+	vop2->wb.conn.encoder.possible_crtcs = (1 << nr_crtcs) - 1;
+	spin_lock_init(&vop2->wb.job_lock);
+	drm_connector_helper_add(&vop2->wb.conn.base, &vop2_wb_connector_helper_funcs);
+
+	ret = drm_writeback_connector_init(vop2->drm_dev, &vop2->wb.conn,
+					   &vop2_wb_connector_funcs,
+					   &vop2_wb_encoder_helper_funcs,
+					   vop2_data->wb->formats,
+					   vop2_data->wb->nformats,
+					   vop2->wb.conn.encoder.possible_crtcs);
+	if (ret)
+		DRM_DEV_ERROR(vop2->dev, "writeback connector init failed\n");
+	return ret;
+}
+
+static void vop2_wb_connector_destory(struct vop2 *vop2)
+{
+	drm_encoder_cleanup(&vop2->wb.conn.encoder);
+	drm_connector_cleanup(&vop2->wb.conn.base);
+}
+
+static void vop2_wb_irqs_enable(struct vop2 *vop2)
+{
+	const struct vop2_data *vop2_data = vop2->data;
+	const struct vop_intr *intr = &vop2_data->axi_intr[0];
+	uint32_t irqs = WB_UV_FIFO_FULL_INTR | WB_YRGB_FIFO_FULL_INTR;
+
+	VOP_INTR_SET_TYPE(vop2, intr, clear, irqs, 1);
+	VOP_INTR_SET_TYPE(vop2, intr, enable, irqs, 1);
+}
+
+static uint32_t vop2_read_and_clear_wb_irqs(struct vop2 *vop2)
+{
+	const struct vop2_data *vop2_data = vop2->data;
+	const struct vop_intr *intr = &vop2_data->axi_intr[0];
+	uint32_t irqs = WB_UV_FIFO_FULL_INTR | WB_YRGB_FIFO_FULL_INTR;
+	uint32_t val;
+
+	val = VOP_INTR_GET_TYPE(vop2, intr, status, irqs);
+	if (val)
+		VOP_INTR_SET_TYPE(vop2, intr, clear, val, 1);
+
+
+	return val;
+}
+
+static void vop2_wb_commit(struct drm_crtc *crtc)
+{
+	struct rockchip_crtc_state *vcstate = to_rockchip_crtc_state(crtc->state);
+	struct vop2_video_port *vp = to_vop2_video_port(crtc);
+	struct vop2 *vop2 = vp->vop2;
+	struct vop2_wb *wb = &vop2->wb;
+	struct drm_writeback_connector *wb_conn = &wb->conn;
+	struct drm_connector_state *conn_state = wb_conn->base.state;
+	struct vop2_wb_connector_state *wb_state;
+	unsigned long flags;
+	uint32_t fifo_throd;
+	uint8_t r2y;
+
+	if (!conn_state)
+		return;
+	wb_state = to_wb_state(conn_state);
+
+	if (wb_state->vp_id != vp->id)
+		return;
+
+	if (conn_state->writeback_job && conn_state->writeback_job->fb) {
+		struct drm_framebuffer *fb = conn_state->writeback_job->fb;
+
+		DRM_DEV_DEBUG(vop2->dev, "Enable wb %ux%u  fmt: %u pitches: %d\n",
+			      fb->width, fb->height, wb_state->format, fb->pitches[0]);
+
+		drm_writeback_queue_job(wb_conn, conn_state);
+		conn_state->writeback_job = NULL;
+
+		spin_lock_irqsave(&wb->job_lock, flags);
+		wb->jobs[wb->job_index].pending = true;
+		wb->job_index++;
+		if (wb->job_index >= VOP2_WB_JOB_MAX)
+			wb->job_index = 0;
+		spin_unlock_irqrestore(&wb->job_lock, flags);
+
+		fifo_throd = fb->pitches[0] >> 4;
+		if (fifo_throd >= vop2->data->wb->fifo_depth)
+			fifo_throd = vop2->data->wb->fifo_depth;
+		r2y = fb->format->is_yuv && (!is_yuv_output(vcstate->bus_format));
+
+		/*
+		 * the vp_id register config done immediately
+		 */
+		VOP_MODULE_SET(vop2, wb, vp_id, wb_state->vp_id);
+		VOP_MODULE_SET(vop2, wb, format, wb_state->format);
+		VOP_MODULE_SET(vop2, wb, yrgb_mst, wb_state->yrgb_addr);
+		VOP_MODULE_SET(vop2, wb, uv_mst, wb_state->uv_addr);
+		VOP_MODULE_SET(vop2, wb, fifo_throd, fifo_throd);
+		VOP_MODULE_SET(vop2, wb, scale_x_factor, wb_state->scale_x_factor);
+		VOP_MODULE_SET(vop2, wb, scale_x_en, wb_state->scale_x_en);
+		VOP_MODULE_SET(vop2, wb, scale_y_en, wb_state->scale_y_en);
+		VOP_MODULE_SET(vop2, wb, r2y_en, r2y);
+		VOP_MODULE_SET(vop2, wb, enable, 1);
+		vop2_wb_irqs_enable(vop2);
+	}
+}
+
 static void rk3568_crtc_load_lut(struct drm_crtc *crtc)
 {
 	struct vop2_video_port *vp = to_vop2_video_port(crtc);
@@ -2885,6 +3244,7 @@ static void vop2_initial(struct drm_crtc *crtc)
 	struct vop2_video_port *vp = to_vop2_video_port(crtc);
 	struct vop2 *vop2 = vp->vop2;
 	uint32_t current_vp_id = vp->id;
+	struct vop2_wb *wb = &vop2->wb;
 	int ret;
 
 	if (vop2->enable_count == 0) {
@@ -2911,6 +3271,10 @@ static void vop2_initial(struct drm_crtc *crtc)
 			rk3588_vop2_regsbak(vop2);
 		else
 			memcpy(vop2->regsbak, vop2->regs, vop2->len);
+
+		VOP_MODULE_SET(vop2, wb, axi_yrgb_id, 0xd);
+		VOP_MODULE_SET(vop2, wb, axi_uv_id, 0xe);
+		vop2_wb_cfg_done(vp);
 
 		VOP_CTRL_SET(vop2, cfg_done_en, 1);
 		/*
@@ -3352,9 +3716,9 @@ static void vop2_crtc_atomic_disable_for_psr(struct drm_crtc *crtc,
 }
 
 static void vop2_crtc_atomic_disable(struct drm_crtc *crtc,
-				     struct drm_atomic_state *s)
+				     struct drm_atomic_state *state)
 {
-	struct drm_crtc_state *old_state = drm_atomic_get_old_crtc_state(s, crtc);
+	struct drm_crtc_state *old_state = drm_atomic_get_old_crtc_state(state, crtc);
 	struct vop2_video_port *vp = to_vop2_video_port(crtc);
 	struct rockchip_crtc_state *vcstate = to_rockchip_crtc_state(crtc->state);
 	struct vop2 *vop2 = vp->vop2;
@@ -3578,9 +3942,9 @@ static int vop2_plane_splice_check(struct drm_plane *plane, struct drm_plane_sta
 	return ret;
 }
 
-static int vop2_plane_atomic_check(struct drm_plane *plane, struct drm_atomic_state *s)
+static int vop2_plane_atomic_check(struct drm_plane *plane, struct drm_atomic_state *atomic_state)
 {
-	struct drm_plane_state *state = drm_atomic_get_new_plane_state(s, plane);
+	struct drm_plane_state *state = drm_atomic_get_new_plane_state(atomic_state, plane);
 	struct vop2_plane_state *vpstate = to_vop2_plane_state(state);
 	struct vop2_win *win = to_vop2_win(plane);
 	struct vop2_win *splice_win;
@@ -3777,9 +4141,9 @@ static int vop2_plane_atomic_check(struct drm_plane *plane, struct drm_atomic_st
 	return 0;
 }
 
-static void vop2_plane_atomic_disable(struct drm_plane *plane, struct drm_atomic_state *s)
+static void vop2_plane_atomic_disable(struct drm_plane *plane, struct drm_atomic_state *atomic_state)
 {
-	struct drm_plane_state *old_state = drm_atomic_get_old_plane_state(s, plane);
+        struct drm_plane_state *old_state = drm_atomic_get_old_plane_state(atomic_state, plane);
 	struct vop2_win *win = to_vop2_win(plane);
 	struct vop2 *vop2 = win->vop2;
 #if defined(CONFIG_ROCKCHIP_DRM_DEBUG)
@@ -4032,9 +4396,9 @@ static void vop2_win_atomic_update(struct vop2_win *win, struct drm_rect *src, s
 
 	vop2_win_enable(win);
 	spin_lock(&vop2->reg_lock);
-	DRM_DEV_DEBUG(vop2->dev, "vp%d update %s[%dx%d->%dx%d@(%d, %d)] fmt[%d%s] addr[%pad]\n",
+	DRM_DEV_DEBUG(vop2->dev, "vp%d update %s[%dx%d->%dx%d@(%d, %d)] fmt[%p4cc%s] addr[%pad]\n",
 		      vp->id, win->name, actual_w, actual_h, dsp_w, dsp_h,
-		      dsp_stx, dsp_sty, fb->format->format,
+		      dsp_stx, dsp_sty, &fb->format->format,
 		      vpstate->afbc_en ? "_AFBC" : "", &vpstate->yrgb_mst);
 
 	if (vop2->version != VOP_VERSION_RK3568)
@@ -4140,9 +4504,9 @@ static void vop2_win_atomic_update(struct vop2_win *win, struct drm_rect *src, s
 	spin_unlock(&vop2->reg_lock);
 }
 
-static void vop2_plane_atomic_update(struct drm_plane *plane, struct drm_atomic_state *s)
+static void vop2_plane_atomic_update(struct drm_plane *plane, struct drm_atomic_state *atomic_state)
 {
-	struct drm_plane_state *pstate = plane->state;
+	struct drm_plane_state *pstate = drm_atomic_get_new_plane_state(atomic_state, plane);
 	struct drm_crtc *crtc = pstate->crtc;
 	struct vop2_win *win = to_vop2_win(plane);
 	struct vop2_win *splice_win;
@@ -4190,7 +4554,7 @@ static void vop2_plane_atomic_update(struct drm_plane *plane, struct drm_atomic_
 		return;
 
 	if (!pstate->visible) {
-		vop2_plane_atomic_disable(plane, s);
+		vop2_plane_atomic_disable(plane, atomic_state);
 		return;
 	}
 
@@ -4207,12 +4571,11 @@ static void vop2_plane_atomic_update(struct drm_plane *plane, struct drm_atomic_
 	}
 
 	if (vcstate->splice_mode) {
-		DRM_DEV_DEBUG(vop2->dev, "vp%d update %s[%dx%d->%dx%d@(%d,%d)] fmt[%d%s] addr[%pad]\n",
+		DRM_DEV_DEBUG(vop2->dev, "vp%d update %s[%dx%d->%dx%d@(%d,%d)] fmt[%p4cc%s] addr[%pad]\n",
 			      vp->id, win->name, drm_rect_width(&vpstate->src) >> 16,
 			      drm_rect_height(&vpstate->src) >> 16,
 			      drm_rect_width(&vpstate->dest), drm_rect_height(&vpstate->dest),
-			      vpstate->dest.x1, vpstate->dest.y1,
-			      fb->format->format,
+			      vpstate->dest.x1, vpstate->dest.y1, &fb->format->format,
 			      vpstate->afbc_en ? "_AFBC" : "", &vpstate->yrgb_mst);
 
 		vop2_calc_drm_rect_for_splice(vpstate, &wsrc, &wdst, &right_wsrc, &right_wdst);
@@ -4804,8 +5167,8 @@ static int vop2_plane_info_dump(struct seq_file *s, struct drm_plane *plane)
 
 	DEBUG_PRINT("\twin_id: %d\n", win->win_id);
 
-	DEBUG_PRINT("\tformat: %d%s%s[%d] color_space[%d] glb_alpha[0x%x]\n",
-		    fb->format->format,
+	DEBUG_PRINT("\tformat: %p4cc%s%s[%d] color_space[%d] glb_alpha[0x%x]\n",
+		    &fb->format->format,
 		    rockchip_afbc(plane, fb->modifier) ? "[AFBC]" : "",
 		    vpstate->eotf ? " HDR" : " SDR", vpstate->eotf,
 		    vpstate->color_space, vpstate->global_alpha);
@@ -5173,7 +5536,7 @@ static size_t vop2_crtc_bandwidth(struct drm_crtc *crtc,
 			plane_num++;
 	}
 
-	//vop_bw_info->plane_num += plane_num;
+	vop_bw_info->plane_num += plane_num;
 	pbandwidth = kmalloc_array(plane_num, sizeof(*pbandwidth),
 				   GFP_KERNEL);
 	if (!pbandwidth)
@@ -5181,7 +5544,7 @@ static size_t vop2_crtc_bandwidth(struct drm_crtc *crtc,
 
 	for_each_new_plane_in_state(state, plane, pstate, i) {
 		int act_w, act_h, bpp, afbc_fac;
-		//int fps = drm_mode_vrefresh(adjusted_mode);
+		int fps = drm_mode_vrefresh(adjusted_mode);
 
 		if (!pstate || pstate->crtc != crtc || !pstate->fb)
 			continue;
@@ -5198,7 +5561,7 @@ static size_t vop2_crtc_bandwidth(struct drm_crtc *crtc,
 		act_h = drm_rect_height(&pstate->src) >> 16;
 		bpp = rockchip_drm_get_bpp(pstate->fb->format);
 
-//		vop_bw_info->frame_bw_mbyte += act_w * act_h / 1000 * bpp / 8 * fps / 1000;
+		vop_bw_info->frame_bw_mbyte += act_w * act_h / 1000 * bpp / 8 * fps / 1000;
 	}
 
 	sort(pbandwidth, cnt, sizeof(pbandwidth[0]), vop2_bandwidth_cmp, NULL);
@@ -5212,7 +5575,7 @@ static size_t vop2_crtc_bandwidth(struct drm_crtc *crtc,
 	 */
 	line_bw_mbyte *= clock;
 	do_div(line_bw_mbyte, htotal * 1000);
-//	vop_bw_info->line_bw_mbyte = line_bw_mbyte;
+	vop_bw_info->line_bw_mbyte = line_bw_mbyte;
 
 	return 0;
 }
@@ -5969,9 +6332,9 @@ static void vop2_post_color_swap(struct drm_crtc *crtc)
 	VOP_MODULE_SET(vop2, vp, dsp_data_swap, data_swap);
 }
 
-static void vop2_crtc_atomic_enable(struct drm_crtc *crtc, struct drm_atomic_state *s)
+static void vop2_crtc_atomic_enable(struct drm_crtc *crtc, struct drm_atomic_state *state)
 {
-	struct drm_crtc_state *old_state = drm_atomic_get_old_crtc_state(s, crtc);
+	struct drm_crtc_state *old_state = drm_atomic_get_old_crtc_state(state, crtc);
 	struct vop2_video_port *vp = to_vop2_video_port(crtc);
 	struct vop2_video_port *splice_vp;
 	struct vop2 *vop2 = vp->vop2;
@@ -6421,7 +6784,7 @@ static int vop2_zpos_cmp(const void *a, const void *b)
 }
 
 static int vop2_crtc_atomic_check(struct drm_crtc *crtc,
-				  struct drm_atomic_state *s)
+				  struct drm_atomic_state *state)
 {
 	struct vop2_video_port *vp = to_vop2_video_port(crtc);
 	struct vop2_video_port *splice_vp;
@@ -7165,7 +7528,7 @@ out:
 	kfree(vop2_zpos_splice_hdr);
 }
 
-static void vop2_crtc_atomic_begin(struct drm_crtc *crtc, struct drm_atomic_state *s)
+static void vop2_crtc_atomic_begin(struct drm_crtc *crtc, struct drm_atomic_state *state)
 {
 	struct vop2_video_port *vp = to_vop2_video_port(crtc);
 	struct vop2 *vop2 = vp->vop2;
@@ -7505,9 +7868,9 @@ static void vop2_cfg_update(struct drm_crtc *crtc,
 	spin_unlock(&vop2->reg_lock);
 }
 
-static void vop2_crtc_atomic_flush(struct drm_crtc *crtc, struct drm_atomic_state *s)
+static void vop2_crtc_atomic_flush(struct drm_crtc *crtc, struct drm_atomic_state *state)
 {
-	struct drm_crtc_state *old_cstate = drm_atomic_get_old_crtc_state(s, crtc);
+	struct drm_crtc_state *old_cstate = drm_atomic_get_old_crtc_state(state, crtc);
 	struct rockchip_crtc_state *vcstate = to_rockchip_crtc_state(crtc->state);
 	struct drm_atomic_state *old_state = old_cstate->state;
 	struct vop2_video_port *vp = to_vop2_video_port(crtc);
@@ -7558,6 +7921,7 @@ static void vop2_crtc_atomic_flush(struct drm_crtc *crtc, struct drm_atomic_stat
 		vop2_crtc_disable_line_flag_event(crtc);
 
 	spin_lock_irqsave(&vop2->irq_lock, flags);
+	vop2_wb_commit(crtc);
 	vop2_cfg_done(crtc);
 
 	spin_unlock_irqrestore(&vop2->irq_lock, flags);
@@ -7910,6 +8274,52 @@ static u32 vop2_read_and_clear_active_vp_irqs(struct vop2 *vop2, int vp_id)
 	return val;
 }
 
+static void vop2_wb_disable(struct vop2_video_port *vp)
+{
+	struct vop2 *vop2 = vp->vop2;
+	struct vop2_wb *wb = &vop2->wb;
+
+	VOP_MODULE_SET(vop2, wb, enable, 0);
+	vop2_wb_cfg_done(vp);
+}
+
+static void vop2_wb_handler(struct vop2_video_port *vp)
+{
+	struct vop2 *vop2 = vp->vop2;
+	struct vop2_wb *wb = &vop2->wb;
+	struct vop2_wb_job *job;
+	unsigned long flags;
+	uint8_t wb_en;
+	uint8_t wb_vp_id;
+	uint8_t i;
+
+	wb_en = vop2_readl(vop2, RK3568_WB_CTRL) & 0x01;
+	wb_vp_id = (vop2_readl(vop2, RK3568_LUT_PORT_SEL) >> 8) & 0x3;
+	if (wb_vp_id != vp->id)
+		return;
+	/*
+	 * The write back should work in one shot mode,
+	 * stop when write back complete in next vsync.
+	 */
+	if (wb_en)
+		vop2_wb_disable(vp);
+
+	spin_lock_irqsave(&wb->job_lock, flags);
+	for (i = 0; i < VOP2_WB_JOB_MAX; i++) {
+		job = &wb->jobs[i];
+		if (job->pending) {
+			job->fs_vsync_cnt++;
+
+			if (job->fs_vsync_cnt == 2) {
+				job->pending = false;
+				job->fs_vsync_cnt = 0;
+				drm_writeback_signal_completion(&vop2->wb.conn, 0);
+			}
+		}
+	}
+	spin_unlock_irqrestore(&wb->job_lock, flags);
+}
+
 static void vop2_dsc_isr(struct vop2 *vop2)
 {
 	const struct vop2_data *vop2_data = vop2->data;
@@ -7958,6 +8368,7 @@ static irqreturn_t vop2_isr(int irq, void *data)
 	uint32_t vp_irqs[ROCKCHIP_MAX_CRTC];
 	uint32_t axi_irqs[VOP2_SYS_AXI_BUS_NUM];
 	uint32_t active_irqs;
+	uint32_t wb_irqs;
 	unsigned long flags;
 	int ret = IRQ_NONE;
 	int i;
@@ -7995,6 +8406,7 @@ static irqreturn_t vop2_isr(int irq, void *data)
 		vp_irqs[i] = vop2_read_and_clear_active_vp_irqs(vop2, i);
 	for (i = 0; i < axi_max; i++)
 		axi_irqs[i] = vop2_read_and_clear_axi_irqs(vop2, i);
+	wb_irqs = vop2_read_and_clear_wb_irqs(vop2);
 	spin_unlock_irqrestore(&vop2->irq_lock, flags);
 
 	for (i = 0; i < vp_max; i++) {
@@ -8020,6 +8432,7 @@ static irqreturn_t vop2_isr(int irq, void *data)
 		}
 
 		if (active_irqs & FS_FIELD_INTR) {
+			vop2_wb_handler(vp);
 			if (likely(!vp->skip_vsync) || (vp->layer_sel_update == false)) {
 				drm_crtc_handle_vblank(crtc);
 				vop2_handle_vblank(vop2, crtc);
@@ -8033,6 +8446,12 @@ static irqreturn_t vop2_isr(int irq, void *data)
 		/* Unhandled irqs are spurious. */
 		if (active_irqs)
 			DRM_ERROR("Unknown video_port%d IRQs: %02x\n", i, active_irqs);
+	}
+
+	if (wb_irqs) {
+		active_irqs = wb_irqs;
+		ERROR_HANDLER(WB_UV_FIFO_FULL);
+		ERROR_HANDLER(WB_YRGB_FIFO_FULL);
 	}
 
 	for (i = 0; i < axi_max; i++) {
@@ -8948,6 +9367,7 @@ static int vop2_bind(struct device *dev, struct device *master, void *data)
 		return ret;
 	vop2_clk_init(vop2);
 	vop2_cubic_lut_init(vop2);
+	vop2_wb_connector_init(vop2, registered_num_crtcs);
 	pm_runtime_enable(&pdev->dev);
 
 	return 0;
@@ -8969,6 +9389,8 @@ static void vop2_unbind(struct device *dev, struct device *master, void *data)
 
 	list_for_each_entry_safe(crtc, tmpc, crtc_list, head)
 		vop2_destroy_crtc(crtc);
+
+	vop2_wb_connector_destory(vop2);
 }
 
 const struct component_ops vop2_component_ops = {
