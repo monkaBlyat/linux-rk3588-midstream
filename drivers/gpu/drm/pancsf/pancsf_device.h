@@ -15,8 +15,6 @@
 #include <drm/gpu_scheduler.h>
 #include <drm/pancsf_drm.h>
 
-#include "pancsf_devfreq.h"
-
 struct pancsf_csf;
 struct pancsf_csf_ctx;
 struct pancsf_device;
@@ -85,8 +83,6 @@ struct pancsf_device {
 	struct pancsf_mmu *mmu;
 	struct pancsf_fw_iface *iface;
 	struct pancsf_scheduler *scheduler;
-
-	struct pancsf_devfreq pfdevfreq;
 };
 
 struct pancsf_file {

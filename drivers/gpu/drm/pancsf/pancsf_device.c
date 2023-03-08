@@ -11,7 +11,6 @@
 
 #include "pancsf_sched.h"
 #include "pancsf_device.h"
-#include "pancsf_devfreq.h"
 #include "pancsf_gpu.h"
 #include "pancsf_mmu.h"
 
@@ -241,19 +240,9 @@ int pancsf_device_init(struct pancsf_device *pfdev)
 		return err;
 	}
 
-	err = pancsf_devfreq_init(pfdev);
-	if (err) {
-		if (err != -EPROBE_DEFER)
-			dev_err(pfdev->dev, "devfreq init failed %d\n", err);
+	err = pancsf_regulator_init(pfdev);
+	if (err)
 		goto err_clk_fini;
-	}
-
-	/* OPP will handle regulators */
-	if (!pfdev->pfdevfreq.opp_of_table_added) {
-		err = pancsf_regulator_init(pfdev);
-		if (err)
-			goto err_devfreq_fini;
-	}
 
 	err = pancsf_reset_init(pfdev);
 	if (err) {
@@ -303,8 +292,6 @@ err_reset_fini:
 	pancsf_reset_fini(pfdev);
 err_regulator_fini:
 	pancsf_regulator_fini(pfdev);
-err_devfreq_fini:
-	pancsf_devfreq_fini(pfdev);
 err_clk_fini:
 	pancsf_clk_fini(pfdev);
 	return err;
@@ -318,7 +305,6 @@ void pancsf_device_fini(struct pancsf_device *pfdev)
 	pancsf_gpu_fini(pfdev);
 	pancsf_pm_domain_fini(pfdev);
 	pancsf_reset_fini(pfdev);
-	pancsf_devfreq_fini(pfdev);
 	pancsf_regulator_fini(pfdev);
 	pancsf_clk_fini(pfdev);
 }

@@ -690,6 +690,10 @@ static void pancsf_handle_cs_fatal(struct pancsf_device *pfdev,
 static void pancsf_handle_cs_fault(struct pancsf_device *pfdev,
 				   unsigned int csg_id, unsigned int cs_id)
 {
+	struct pancsf_scheduler *sched = pfdev->scheduler;
+	struct pancsf_csg_slot *csg_slot = &sched->csg_slots[csg_id];
+	struct pancsf_group *group = csg_slot->group;
+	struct pancsf_queue *stream = cs_id < group->stream_count ? group->streams[cs_id] : NULL;
 	const struct pancsf_fw_cs_iface *cs_iface;
 	u32 fault;
 	u64 info;
@@ -697,6 +701,23 @@ static void pancsf_handle_cs_fault(struct pancsf_device *pfdev,
 	cs_iface = pancsf_get_cs_iface(pfdev, csg_id, cs_id);
 	fault = cs_iface->output->fault;
 	info = cs_iface->output->fault_info;
+
+	if (stream && CS_EXCEPTION_TYPE(fault) == DRM_PANCSF_EXCEPTION_CS_INHERIT_FAULT) {
+		u64 cs_extract = stream->iface.output->extract;
+		struct pancsf_job *job;
+
+		spin_lock(&stream->jobs.lock);
+		list_for_each_entry(job, &stream->jobs.in_flight, node) {
+			if (cs_extract >= job->ringbuf.end)
+				continue;
+
+			if (cs_extract < job->ringbuf.start)
+				break;
+
+			dma_fence_set_error(job->done_fence, -EINVAL);
+		}
+		spin_unlock(&stream->jobs.lock);
+	}
 
 	dev_warn(pfdev->dev,
 		 "CSG slot %d CS slot: %d\n"
@@ -868,10 +889,15 @@ static bool pancsf_sched_handle_csg_irq(struct pancsf_device *pfdev, unsigned in
 	if (acked_reqs & CSG_ENDPOINT_CONFIG)
 		pancsf_sync_csg_slot_priority_locked(pfdev, csg_id);
 
-	if (acked_reqs & CSG_STATE_MASK) {
+	if ((acked_reqs & CSG_STATE_MASK) == CSG_STATE_MASK) {
 		acked_reqs |= CSG_STATE_MASK;
 		pancsf_sync_csg_slot_state_locked(pfdev, csg_id);
 	}
+
+	if ((acked_reqs & CSG_STATE_MASK) == CSG_STATE_MASK)
+		pancsf_sync_csg_slot_state_locked(pfdev, csg_id);
+	else
+		acked_reqs &= ~CSG_STATE_MASK;
 
 	if (acked_reqs & CSG_STATUS_UPDATE)
 		pancsf_handle_csg_state_update(pfdev, csg_id);
@@ -901,9 +927,6 @@ static bool pancsf_sched_handle_csg_irq(struct pancsf_device *pfdev, unsigned in
 						   CSG_IDLE |
 						   CSG_PROGRESS_TIMER_EVENT);
 
-	if (csg_events & CSG_SYNC_UPDATE)
-		pancsf_queue_csg_sync_update_locked(pfdev, csg_id);
-
 	if (csg_events & CSG_IDLE)
 		pancsf_handle_csg_idle(pfdev, csg_id);
 
@@ -919,6 +942,9 @@ static bool pancsf_sched_handle_csg_irq(struct pancsf_device *pfdev, unsigned in
 
 		cs_events &= ~BIT(cs_id);
 	}
+
+	if (csg_events & CSG_SYNC_UPDATE)
+		pancsf_queue_csg_sync_update_locked(pfdev, csg_id);
 
 	if (ring_cs_db_mask) {
 		csg_iface->input->doorbell_req = pancsf_toggle_reqs(csg_iface->input->doorbell_req,
@@ -1014,6 +1040,7 @@ pancsf_queue_fence_ctx_create(struct pancsf_queue *queue)
 		return -ENOMEM;
 	}
 
+	ctx->id = dma_fence_context_alloc(1);
 	spin_lock_init(&ctx->lock);
 	snprintf(ctx->name, sizeof(ctx->name),
 		 PANCSF_CS_QUEUE_FENCE_CTX_NAME_PREFIX "%llx",
@@ -1203,7 +1230,7 @@ static void pancsf_queue_submit_job(struct pancsf_queue *stream, struct pancsf_j
 		/* MOV48 rX:rX+1, sync_addr */
 		(1ull << 56) | (addr_reg << 48) | sync_addr,
 
-		/* MOV32 rX+2, sync_seqno */
+		/* MOV32 rX+2, #1 */
 		(1ull << 56) | (val_reg << 48) | 1,
 
 		/* WAIT(all) */
@@ -2323,7 +2350,7 @@ static void pancsf_group_sync_upd_work(struct work_struct *work)
 		spin_lock(&stream->jobs.lock);
 		list_for_each_entry_safe(job, job_tmp, &stream->jobs.in_flight, node) {
 			struct pancsf_queue_fence *fence;
-			u64 job_seqno = job->ringbuf.start / (NUM_INSTRS_PER_SLOT * sizeof(u64));
+			u64 job_seqno = (job->ringbuf.start / (NUM_INSTRS_PER_SLOT * sizeof(u64))) + 1;
 
 			if (!job->call_info.size)
 				continue;

@@ -65,7 +65,7 @@ static void pancsf_free_heap_chunk(struct pancsf_vm *vm,
 static int pancsf_alloc_heap_chunk(struct pancsf_device *pfdev,
 				   struct pancsf_vm *vm,
 				   struct pancsf_heap *heap,
-				   bool link_with_prev)
+				   bool initial_chunk)
 {
 	struct iosys_map map = IOSYS_MAP_INIT_VADDR(NULL);
 	struct pancsf_heap_chunk *chunk;
@@ -88,34 +88,28 @@ static int pancsf_alloc_heap_chunk(struct pancsf_device *pfdev,
 
 	memset(hdr, 0, sizeof(*hdr));
 
-	map.vaddr = hdr;
-	drm_gem_shmem_vunmap(&chunk->bo->base, &map);
-
-	if (link_with_prev && !list_empty(&heap->chunks)) {
+	if (initial_chunk && !list_empty(&heap->chunks)) {
 		struct pancsf_heap_chunk *prev_chunk;
 
 		prev_chunk = list_first_entry(&heap->chunks,
 					      struct pancsf_heap_chunk,
 					      node);
 
-		ret = drm_gem_shmem_vmap(&prev_chunk->bo->base, &map);
-		if (ret)
-			goto err_put_bo;
-
-		hdr = map.vaddr;
-		hdr->next = (chunk->gpu_va & GENMASK(11, 0)) |
+		hdr->next = (prev_chunk->gpu_va & GENMASK_ULL(63, 12)) |
 			    (heap->chunk_size >> 12);
-
-		drm_gem_shmem_vunmap(&prev_chunk->bo->base, &map);
 	}
 
-	list_add(&chunk->node, &heap->chunks);
+	map.vaddr = hdr;
+	drm_gem_shmem_vunmap(&chunk->bo->base, &map);
+
+	if (initial_chunk)
+		list_add(&chunk->node, &heap->chunks);
+	else
+		list_add_tail(&chunk->node, &heap->chunks);
 	heap->chunk_count++;
 
 	return 0;
 
-err_put_bo:
-	drm_gem_object_put(&chunk->bo->base.base);
 err_free_chunk:
 	kfree(chunk);
 
@@ -270,10 +264,11 @@ int pancsf_heap_grow(struct pancsf_heap_pool *pool,
 	if (ret)
 		goto out_unlock;
 
-	chunk = list_first_entry(&heap->chunks,
-				 struct pancsf_heap_chunk,
-				 node);
-	*new_chunk_gpu_va = chunk->gpu_va;
+	chunk = list_last_entry(&heap->chunks,
+				struct pancsf_heap_chunk,
+				node);
+	*new_chunk_gpu_va = (chunk->gpu_va & GENMASK_ULL(63, 12)) |
+			    (heap->chunk_size >> 12);
 	ret = 0;
 
 out_unlock:

@@ -35,9 +35,6 @@ enum drm_pancsf_ioctl_id {
 	DRM_PANCSF_TILER_HEAP_CREATE,
 	DRM_PANCSF_TILER_HEAP_DESTROY,
 	DRM_PANCSF_GROUP_SUBMIT,
-	DRM_PANCSF_VM_BIND_QUEUE_CREATE,
-	DRM_PANCSF_VM_BIND_QUEUE_DESTROY,
-	DRM_PANCSF_VM_BIND_SUBMIT,
 };
 
 #define DRM_IOCTL_PANCSF_DEV_QUERY		DRM_IOWR(DRM_COMMAND_BASE + DRM_PANCSF_DEV_QUERY, struct drm_pancsf_dev_query)
@@ -53,9 +50,6 @@ enum drm_pancsf_ioctl_id {
 #define DRM_IOCTL_PANCSF_TILER_HEAP_CREATE	DRM_IOWR(DRM_COMMAND_BASE + DRM_PANCSF_TILER_HEAP_CREATE, struct drm_pancsf_tiler_heap_create)
 #define DRM_IOCTL_PANCSF_TILER_HEAP_DESTROY	DRM_IOWR(DRM_COMMAND_BASE + DRM_PANCSF_TILER_HEAP_DESTROY, struct drm_pancsf_tiler_heap_destroy)
 #define DRM_IOCTL_PANCSF_GROUP_SUBMIT		DRM_IOWR(DRM_COMMAND_BASE + DRM_PANCSF_GROUP_SUBMIT, struct drm_pancsf_group_submit)
-#define DRM_IOCTL_PANCSF_VM_BIND_QUEUE_CREATE	DRM_IOWR(DRM_COMMAND_BASE + DRM_PANCSF_VM_BIND_QUEUE_CREATE, struct drm_pancsf_vm_bind_queue_create)
-#define DRM_IOCTL_PANCSF_VM_BIND_QUEUE_DESTROY	DRM_IOWR(DRM_COMMAND_BASE + DRM_PANCSF_VM_BIND_QUEUE_DESTROY, struct drm_pancsf_vm_bind_queue_destroy)
-#define DRM_IOCTL_PANCSF_VM_BIND_SUBMIT		DRM_IOWR(DRM_COMMAND_BASE + DRM_PANCSF_VM_BIND_SUBMIT, struct drm_pancsf_vm_bind_submit)
 
 /* Place new types at the end, don't re-oder. */
 enum drm_pancsf_dev_query_type {
@@ -447,66 +441,6 @@ struct drm_pancsf_tiler_heap_destroy {
 
 	/** @pad: Padding field, MBZ. */
 	__u32 pad;
-};
-
-enum drm_pancsf_bind_queue_priority {
-	PANCSF_BIND_QUEUE_PRIORITY_LOW = 0,
-	PANCSF_BIND_QUEUE_PRIORITY_MEDIUM,
-	PANCSF_BIND_QUEUE_PRIORITY_HIGH,
-};
-
-struct drm_pancsf_vm_bind_queue_create {
-	/** @handle: Returned bind queue handle/ */
-	__u32 handle;
-
-	/** @priority: Bind queue priority. */
-	__u8 priority;
-
-	/** @pad: MBZ. */
-	__u8 pad[3];
-};
-
-struct drm_pancsf_vm_bind_queue_destroy {
-	/** @handle: Bind queue to destroy */
-	__u32 handle;
-
-	/** @pad: MBZ. */
-	__u32 pad;
-};
-
-enum drm_pancsf_vm_bind_op_type {
-	DRM_PANCSF_BIND_OP_MAP = 0,
-	DRM_PANCSF_BIND_OP_UNMAP,
-};
-
-struct drm_pancsf_vm_bind_op {
-	/** @type: Bind operation type (see drm_pancsf_vm_bind_op_type) */
-	__u32 type;
-
-	/** @pad: MBZ. */
-	__u32 pad;
-
-	union {
-		/** @map: Map arguments. */
-		struct drm_pancsf_vm_map map;
-
-		/** @unmap: Unmap arguments. */
-		struct drm_pancsf_vm_unmap unmap;
-	};
-};
-
-struct drm_pancsf_vm_bind_submit {
-	/** @vm_id: VM this bind queue acts on. */
-	__u32 vm_id;
-
-	/** @queue_handle: Bind queue handle. */
-	__u32 queue_handle;
-
-	/** @syncs: Array of sync objects. */
-	struct drm_pancsf_obj_array syncs;
-
-	/** @ops: Array of bind operations. */
-	struct drm_pancsf_obj_array ops;
 };
 
 #if defined(__cplusplus)

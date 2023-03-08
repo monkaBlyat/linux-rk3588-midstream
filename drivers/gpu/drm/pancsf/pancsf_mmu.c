@@ -47,10 +47,6 @@ struct pancsf_mmu {
 		struct list_head lru_list;
 		spinlock_t op_lock;
 	} as;
-
-	struct {
-		struct drm_gpu_scheduler sched;
-	} vm_bind;
 };
 
 struct pancsf_vm_pool {
@@ -71,11 +67,13 @@ struct pancsf_vm {
 	struct dma_resv resv;
 	struct mutex lock;
 	struct drm_mm mm;
+
+	u64 min_va;
+	u64 max_va;
+
 	int as;
 	atomic_t as_count;
 	bool for_mcu;
-	bool destroyed;
-	bool vm_bind_failure;
 	struct list_head node;
 };
 
@@ -87,46 +85,6 @@ struct pancsf_vma {
 	u64 offset;
 	u32 flags;
 	bool mapped;
-};
-
-struct pancsf_vm_bind_queue_pool {
-	struct xarray xa;
-	struct mutex lock;
-};
-
-struct pancsf_vm_bind_queue {
-	struct kref refcount;
-	struct drm_sched_entity sched_entity;
-};
-
-struct pancsf_vm_bind_async_map {
-	struct pancsf_gem_object *bo;
-	u64 bo_offset;
-	u64 va;
-	u64 size;
-	u32 flags;
-};
-
-struct pancsf_vm_bind_async_unmap {
-	u64 va;
-	u64 size;
-};
-
-struct pancsf_vm_bind_async_op {
-	enum drm_pancsf_vm_bind_op_type type;
-	union {
-		struct pancsf_vm_bind_async_map map;
-		struct pancsf_vm_bind_async_unmap unmap;
-	};
-};
-
-struct pancsf_vm_bind_job {
-	struct drm_sched_job base;
-	struct pancsf_vm_bind_queue *queue;
-	struct pancsf_vm *vm;
-	u32 op_count;
-	u32 cur_op;
-	struct pancsf_vm_bind_async_op *ops;
 };
 
 static int wait_ready(struct pancsf_device *pfdev, u32 as_nr)
@@ -258,6 +216,11 @@ static void pancsf_mmu_as_disable(struct pancsf_device *pfdev, u32 as_nr)
 	write_cmd(pfdev, as_nr, AS_COMMAND_UPDATE);
 }
 
+static bool pancsf_vm_va_is_valid(struct pancsf_vm *vm, u64 addr)
+{
+	return addr >= vm->min_va && addr <= vm->max_va;
+}
+
 static void pancsf_vm_enable(struct pancsf_vm *vm)
 {
 	struct pancsf_device *pfdev = vm->pfdev;
@@ -374,8 +337,6 @@ void pancsf_mmu_pre_reset(struct pancsf_device *pfdev)
 	mutex_unlock(&pfdev->mmu->as.slots_lock);
 
 	synchronize_irq(pfdev->mmu->irq);
-
-	drm_sched_stop(&pfdev->mmu->vm_bind.sched, NULL);
 }
 
 void pancsf_mmu_reset(struct pancsf_device *pfdev)
@@ -398,9 +359,6 @@ void pancsf_mmu_reset(struct pancsf_device *pfdev)
 
 	mmu_write(pfdev, MMU_INT_CLEAR, pancsf_mmu_fault_mask(pfdev, ~0));
 	mmu_write(pfdev, MMU_INT_MASK, pancsf_mmu_fault_mask(pfdev, ~0));
-
-	drm_sched_resubmit_jobs(&pfdev->mmu->vm_bind.sched);
-	drm_sched_start(&pfdev->mmu->vm_bind.sched, true);
 }
 
 static size_t get_pgsize(u64 addr, size_t size, size_t *count)
@@ -716,11 +674,6 @@ pancsf_vm_map_bo_range(struct pancsf_vm *vm, struct pancsf_gem_object *bo,
 		return -EINVAL;
 
 	mutex_lock(&vm->lock);
-	if (vm->destroyed) {
-		ret = -EINVAL;
-		goto out_unlock;
-	}
-
 	vma = pancsf_vm_alloc_vma_locked(vm, size, *va, flags);
 	if (IS_ERR(vma)) {
 		ret = PTR_ERR(vma);
@@ -765,14 +718,16 @@ pancsf_vm_unmap_range(struct pancsf_vm *vm, u64 va, size_t size)
 	if ((va | size) & ~PAGE_MASK)
 		return -EINVAL;
 
+	if (va + size < va)
+		return -EINVAL;
+
 	if (!size)
 		return 0;
 
+	if (!pancsf_vm_va_is_valid(vm, va) || !pancsf_vm_va_is_valid(vm, va + size - 1))
+		return -EINVAL;
+
 	mutex_lock(&vm->lock);
-	if (vm->destroyed) {
-		ret = 0;
-		goto out_unlock;
-	}
 
 	drm_mm_for_each_node_in_range_safe(mm_node, tmp_mm_node, &vm->mm, va >> PAGE_SHIFT,
 					   (va + size) >> PAGE_SHIFT) {
@@ -821,11 +776,9 @@ pancsf_vm_unmap_range(struct pancsf_vm *vm, u64 va, size_t size)
 		mm_node = list_next_entry(mm_node, node_list);
 
 		if (vma != last && vma != first) {
-			if (vma->mapped) {
-				ret = pancsf_vma_unmap_locked(vma);
-				if (ret)
-					goto out_unlock;
-			}
+			ret = pancsf_vma_unmap_locked(vma);
+			if (ret)
+				goto out_unlock;
 
 			pancsf_vm_free_vma_locked(vma);
 		}
@@ -868,21 +821,6 @@ out_unlock:
 	return ret;
 }
 
-void pancsf_vm_unmap_all_locked(struct pancsf_vm *vm)
-{
-	struct drm_mm_node *mm_node, *tmp_mm_node;
-
-	lockdep_assert_held(&vm->lock);
-	drm_mm_for_each_node_safe(mm_node, tmp_mm_node, &vm->mm) {
-		struct pancsf_vma *vma = container_of(mm_node, struct pancsf_vma, vm_mm_node);
-
-		if (vma->mapped)
-			pancsf_vma_unmap_locked(vma);
-
-		pancsf_vm_free_vma_locked(vma);
-	}
-}
-
 struct pancsf_gem_object *
 pancsf_vm_get_bo_for_vma(struct pancsf_vm *vm, u64 va, u64 *bo_offset)
 {
@@ -890,6 +828,9 @@ pancsf_vm_get_bo_for_vma(struct pancsf_vm *vm, u64 va, u64 *bo_offset)
 	struct pancsf_vma *vma = NULL;
 	struct drm_mm_node *mm_node;
 	u64 vma_va;
+
+	if (!pancsf_vm_va_is_valid(vm, va))
+		return ERR_PTR(-EINVAL);
 
 	mutex_lock(&vm->lock);
 	drm_mm_for_each_node_in_range(mm_node, &vm->mm, va >> PAGE_SHIFT, (va >> PAGE_SHIFT) + 1) {
@@ -933,24 +874,6 @@ int pancsf_vm_pool_create_vm(struct pancsf_device *pfdev, struct pancsf_vm_pool 
 	return id;
 }
 
-static void pancsf_vm_destroy(struct pancsf_vm *vm)
-{
-	if (!vm)
-		return;
-
-	mutex_lock(&vm->lock);
-	/* We need to tear down all VMAs to kill the VM <-> priv-BO cross ref:
-	 * VMA (which is part of the VM) hold a ref to the private BO,
-	 * and the private BO hold a ref to its exclusive VM. This might cause
-	 * (recoverable) page faults if jobs are still in flight, but let's
-	 * leave this responsibility to userspace.
-	 */
-	pancsf_vm_unmap_all_locked(vm);
-	vm->destroyed = true;
-	mutex_unlock(&vm->lock);
-	pancsf_vm_put(vm);
-}
-
 void pancsf_vm_pool_destroy_vm(struct pancsf_vm_pool *pool, u32 handle)
 {
 	struct pancsf_vm *vm;
@@ -959,7 +882,8 @@ void pancsf_vm_pool_destroy_vm(struct pancsf_vm_pool *pool, u32 handle)
 	vm = xa_erase(&pool->xa, handle);
 	mutex_unlock(&pool->lock);
 
-	pancsf_vm_destroy(vm);
+	if (vm)
+		pancsf_vm_put(vm);
 }
 
 struct pancsf_vm *pancsf_vm_pool_get_vm(struct pancsf_vm_pool *pool, u32 handle)
@@ -985,7 +909,7 @@ void pancsf_vm_pool_destroy(struct pancsf_file *pfile)
 
 	mutex_lock(&pfile->vms->lock);
 	xa_for_each(&pfile->vms->xa, i, vm)
-		pancsf_vm_destroy(vm);
+		pancsf_vm_put(vm);
 	mutex_unlock(&pfile->vms->lock);
 
 	mutex_destroy(&pfile->vms->lock);
@@ -1031,13 +955,12 @@ static int pancsf_mmu_map_fault_addr_locked(struct pancsf_device *pfdev, int as,
 	if (!vm)
 		return -ENOENT;
 
-	mutex_lock(&vm->lock);
-	if (vm->destroyed) {
-		ret = -EINVAL;
-		goto out;
-	}
+	if (!pancsf_vm_va_is_valid(vm, addr))
+		return -EINVAL;
 
-	drm_mm_for_each_node_in_range(mm_node, &vm->mm, addr, addr + 1)
+	mutex_lock(&vm->lock);
+	drm_mm_for_each_node_in_range(mm_node, &vm->mm, addr >> PAGE_SHIFT,
+				      (addr >> PAGE_SHIFT) + 1)
 		vma = container_of(mm_node, struct pancsf_vma, vm_mm_node);
 
 	if (!vma) {
@@ -1084,10 +1007,7 @@ static void pancsf_vm_release(struct kref *kref)
 	}
 	mutex_unlock(&pfdev->mmu->as.slots_lock);
 
-	mutex_lock(&vm->lock);
-	if (WARN_ON(!drm_mm_clean(&vm->mm)))
-		pancsf_vm_unmap_all_locked(vm);
-	mutex_unlock(&vm->lock);
+	pancsf_vm_unmap_range(vm, vm->min_va, vm->max_va + 1 - vm->min_va);
 
 	free_io_pgtable_ops(vm->pgtbl_ops);
 	drm_mm_takedown(&vm->mm);
@@ -1240,7 +1160,6 @@ struct pancsf_vm *pancsf_vm_create(struct pancsf_device *pfdev, bool for_mcu)
 	u32 va_bits = GPU_MMU_FEATURES_VA_BITS(pfdev->gpu_info.mmu_features);
 	u32 pa_bits = GPU_MMU_FEATURES_PA_BITS(pfdev->gpu_info.mmu_features);
 	struct pancsf_vm *vm;
-	u64 va_start, va_end;
 
 	vm = kzalloc(sizeof(*vm), GFP_KERNEL);
 	if (!vm)
@@ -1253,15 +1172,15 @@ struct pancsf_vm *pancsf_vm_create(struct pancsf_device *pfdev, bool for_mcu)
 
 	if (for_mcu) {
 		/* CSF MCU is a cortex M7, and can only address 4G */
-		va_start = 0;
-		va_end = SZ_4G;
+		vm->min_va = 0;
+		vm->max_va = SZ_4G - 1;
 	} else {
-		va_start = SZ_32M;
-		va_end = (1ull << va_bits) - SZ_32M;
+		vm->min_va = SZ_32M;
+		vm->max_va = (1ull << va_bits) - SZ_32M - 1;
 		vm->mm.color_adjust = pancsf_drm_mm_color_adjust;
 	}
 
-	drm_mm_init(&vm->mm, va_start >> PAGE_SHIFT, va_end >> PAGE_SHIFT);
+	drm_mm_init(&vm->mm, vm->min_va >> PAGE_SHIFT, (vm->max_va + 1) >> PAGE_SHIFT);
 
 	INIT_LIST_HEAD(&vm->node);
 	vm->as = -1;
@@ -1285,376 +1204,6 @@ struct pancsf_vm *pancsf_vm_create(struct pancsf_device *pfdev, bool for_mcu)
 	kref_init(&vm->refcount);
 
 	return vm;
-}
-
-struct dma_resv *pancsf_vm_resv(struct pancsf_vm *vm)
-{
-	return &vm->resv;
-}
-
-/* Dummy fence ops. We just need a fence that's never signaled when the
- * async bind operation times out. In that case, a reset is scheduled,
- * but we need the scheduler to consider bind op in-progress so it can
- * be resubmitted after the reset.
- */
-static const char *vm_bind_fence_stub_get_driver_name(struct dma_fence *fence)
-{
-	return "pancsf";
-}
-
-static const char *vm_bind_fence_stub_get_timeline_name(struct dma_fence *fence)
-{
-	return "vm-bind-stub";
-}
-
-static const struct dma_fence_ops vm_bind_fence_stub_ops = {
-	.get_driver_name = vm_bind_fence_stub_get_driver_name,
-	.get_timeline_name = vm_bind_fence_stub_get_timeline_name,
-};
-
-static DEFINE_SPINLOCK(vm_bind_fence_stub_lock);
-static struct dma_fence vm_bind_fence_stub;
-
-static struct dma_fence *vm_bind_get_fence_stub(void)
-{
-	spin_lock(&vm_bind_fence_stub_lock);
-	if (!vm_bind_fence_stub.ops) {
-		dma_fence_init(&vm_bind_fence_stub,
-			       &vm_bind_fence_stub_ops,
-			       &vm_bind_fence_stub_lock,
-			       0, 0);
-	}
-	spin_unlock(&vm_bind_fence_stub_lock);
-
-	return dma_fence_get(&vm_bind_fence_stub);
-}
-
-struct dma_fence *
-pancsf_vm_bind_run_job(struct drm_sched_job *sched_job)
-{
-	struct pancsf_vm_bind_job *job = container_of(sched_job, struct pancsf_vm_bind_job, base);
-
-	mutex_lock(&job->vm->lock);
-	job->vm->vm_bind_failure = true;
-	mutex_unlock(&job->vm->lock);
-
-	for (; job->cur_op < job->op_count; job->cur_op++) {
-		struct pancsf_vm_bind_async_op *op = &job->ops[job->cur_op];
-		int ret;
-
-		if (op->type == DRM_PANCSF_BIND_OP_UNMAP) {
-			ret = pancsf_vm_unmap_range(job->vm, op->unmap.va, op->unmap.size);
-		} else {
-			ret = pancsf_vm_map_bo_range(job->vm, op->map.bo, op->map.bo_offset,
-						     op->map.size, &op->map.va, op->map.flags);
-			if (!ret || ret == -ETIMEDOUT) {
-				drm_gem_object_put(&op->map.bo->base.base);
-				op->map.bo = NULL;
-			}
-		}
-
-		/* pancsf_vm_flush_range() timedout. A reset has been scheduled, but
-		 * we need to block the VM_BIND engine until the GPU is reset, so the
-		 * unmap/map request can be issued again.
-		 */
-		if (ret == -ETIMEDOUT) {
-			/* After a reset the TLB is clean, we don't need to update
-			 * the page table or flush the TLB again. Consider this op
-			 * done already.
-			 */
-			if (op->type == DRM_PANCSF_BIND_OP_MAP)
-				job->cur_op++;
-
-			return vm_bind_get_fence_stub();
-		}
-
-		/* No only we report an error which results which is propagated to the
-		 * drm_sched finished fence, but we also flag the VM as unusable, because
-		 * a failure in the async VM_BIND results in an inconsistent state. VM needs
-		 * to be destroyed and recreated.
-		 */
-		if (ret) {
-			mutex_lock(&job->vm->lock);
-			job->vm->vm_bind_failure = true;
-			mutex_unlock(&job->vm->lock);
-			return ERR_PTR(ret);
-		}
-	}
-
-	/* All bind ops succeeded, return a NULL fence to let drm_sched signal the
-	 * finished fence.
-	 */
-	return NULL;
-}
-
-void pancsf_vm_bind_job_destroy(struct pancsf_vm_bind_job *job)
-{
-	u32 i;
-
-	if (!job)
-		return;
-
-	drm_sched_job_cleanup(&job->base);
-
-	for (i = job->cur_op; i < job->op_count; i++) {
-		struct pancsf_vm_bind_async_op *op = &job->ops[i];
-
-		if (op->type == DRM_PANCSF_BIND_OP_MAP)
-			drm_gem_object_put(&op->map.bo->base.base);
-	}
-
-	pancsf_vm_put(job->vm);
-	pancsf_vm_bind_queue_put(job->queue);
-	kfree(job->ops);
-	kfree(job);
-}
-
-static void
-pancsf_vm_bind_free_job(struct drm_sched_job *sched_job)
-{
-	struct pancsf_vm_bind_job *job = container_of(sched_job, struct pancsf_vm_bind_job, base);
-
-	pancsf_vm_bind_job_destroy(job);
-}
-
-enum drm_gpu_sched_stat
-pancsf_vm_bind_timedout_job(struct drm_sched_job *sched_job)
-{
-	WARN(1, "VM_BIND ops are synchronous for now, there should be no timeout!");
-	return DRM_GPU_SCHED_STAT_NOMINAL;
-}
-
-static const struct drm_sched_backend_ops pancsf_vm_bind_ops = {
-	.run_job = pancsf_vm_bind_run_job,
-	.free_job = pancsf_vm_bind_free_job,
-	.timedout_job = pancsf_vm_bind_timedout_job,
-};
-
-void pancsf_vm_bind_queue_pool_destroy(struct pancsf_file *pfile)
-{
-	kfree(pfile->vm_bind_queues);
-}
-
-int pancsf_vm_bind_queue_pool_create(struct pancsf_file *pfile)
-{
-	pfile->vm_bind_queues = kzalloc(sizeof(*pfile->vm_bind_queues), GFP_KERNEL);
-	if (!pfile->vm_bind_queues)
-		return -ENOMEM;
-
-	xa_init_flags(&pfile->vm_bind_queues->xa, XA_FLAGS_ALLOC1);
-	mutex_init(&pfile->vm_bind_queues->lock);
-	return 0;
-}
-
-static void pancsf_vm_bind_queue_release(struct kref *kref)
-{
-	struct pancsf_vm_bind_queue *queue = container_of(kref, struct pancsf_vm_bind_queue,
-							  refcount);
-
-	drm_sched_entity_fini(&queue->sched_entity);
-	kfree(queue);
-}
-
-void pancsf_vm_bind_queue_put(struct pancsf_vm_bind_queue *queue)
-{
-	if (queue)
-		kref_put(&queue->refcount, pancsf_vm_bind_queue_release);
-}
-
-struct pancsf_vm_bind_queue *pancsf_vm_bind_queue_get(struct pancsf_vm_bind_queue *queue)
-{
-	if (queue)
-		kref_get(&queue->refcount);
-
-	return queue;
-}
-
-void pancsf_vm_bind_queue_pool_destroy_queue(struct pancsf_vm_bind_queue_pool *pool,
-					     u32 handle)
-{
-	struct pancsf_vm_bind_queue *queue;
-
-	mutex_lock(&pool->lock);
-	queue = xa_erase(&pool->xa, handle);
-	mutex_unlock(&pool->lock);
-
-	if (queue) {
-		drm_sched_entity_flush(&queue->sched_entity, MAX_WAIT_SCHED_ENTITY_Q_EMPTY);
-		pancsf_vm_bind_queue_put(queue);
-	}
-}
-
-#define PANCSF_MAX_VM_BIND_QUEUE_PER_FILE	 32
-
-int pancsf_vm_bind_queue_pool_create_queue(struct pancsf_device *pfdev,
-					   struct pancsf_vm_bind_queue_pool *pool,
-					   u8 prio)
-{
-	struct drm_gpu_scheduler *sched = &pfdev->mmu->vm_bind.sched;
-	enum drm_sched_priority sched_prio;
-	struct pancsf_vm_bind_queue *queue;
-	int ret;
-	u32 id;
-
-	switch (prio) {
-	case PANCSF_BIND_QUEUE_PRIORITY_LOW:
-		sched_prio = DRM_SCHED_PRIORITY_MIN;
-		break;
-	case PANCSF_BIND_QUEUE_PRIORITY_MEDIUM:
-		sched_prio = DRM_SCHED_PRIORITY_NORMAL;
-		break;
-	case PANCSF_BIND_QUEUE_PRIORITY_HIGH:
-		sched_prio = DRM_SCHED_PRIORITY_HIGH;
-		break;
-	default:
-		return -EINVAL;
-	}
-
-	queue = kzalloc(sizeof(*queue), GFP_KERNEL);
-	if (!queue)
-		return -ENOMEM;
-
-	ret = drm_sched_entity_init(&queue->sched_entity, sched_prio, &sched, 1, NULL);
-	if (ret) {
-		kfree(queue);
-		return ret;
-	}
-
-	kref_init(&queue->refcount);
-
-	mutex_lock(&pool->lock);
-	ret = xa_alloc(&pool->xa, &id, queue,
-		       XA_LIMIT(1, PANCSF_MAX_VMS_PER_FILE), GFP_KERNEL);
-	mutex_unlock(&pool->lock);
-
-	if (ret < 0) {
-		pancsf_vm_bind_queue_put(queue);
-		return ret;
-	}
-
-	return id;
-}
-
-struct pancsf_vm_bind_queue *
-pancsf_vm_bind_queue_pool_get_queue(struct pancsf_vm_bind_queue_pool *pool, u32 handle)
-{
-	struct pancsf_vm_bind_queue *queue;
-
-	mutex_lock(&pool->lock);
-	queue = xa_load(&pool->xa, handle);
-	if (queue)
-		pancsf_vm_bind_queue_get(queue);
-	mutex_unlock(&pool->lock);
-
-	return queue;
-}
-
-#define PANCSF_VM_BIND_MAP_FLAGS (PANCSF_VMA_MAP_READONLY | \
-				  PANCSF_VMA_MAP_NOEXEC | \
-				  PANCSF_VMA_MAP_UNCACHED | \
-				  PANCSF_VMA_MAP_ON_FAULT)
-
-struct pancsf_vm_bind_job *
-pancsf_vm_bind_job_create(struct drm_file *file,
-			  struct pancsf_vm_bind_queue *queue,
-			  struct pancsf_vm *vm,
-			  struct drm_pancsf_vm_bind_op *bind_ops,
-			  u32 bind_op_count)
-{
-	struct pancsf_vm_bind_job *job;
-	struct drm_gem_object *gem;
-	int ret;
-	u32 i;
-
-	if (!vm || !queue)
-		return ERR_PTR(-EINVAL);
-
-	job = kzalloc(sizeof(*job), GFP_KERNEL);
-	if (!job)
-		return ERR_PTR(-ENOMEM);
-
-	job->ops = kcalloc(sizeof(*job->ops), bind_op_count, GFP_KERNEL);
-	if (!job->ops) {
-		ret = -ENOMEM;
-		goto err_free_job;
-	}
-
-	for (i = 0; i < bind_op_count; i++) {
-		job->ops[i].type = bind_ops[i].type;
-		switch (job->ops[i].type) {
-		case DRM_PANCSF_BIND_OP_MAP:
-			gem = drm_gem_object_lookup(file, bind_ops[i].map.bo_handle);
-			job->ops[i].map.bo = gem ? to_pancsf_bo(gem) : NULL;
-			job->ops[i].map.bo_offset = bind_ops[i].map.bo_offset;
-			job->ops[i].map.va = bind_ops[i].map.va;
-			job->ops[i].map.size = bind_ops[i].map.size;
-			job->ops[i].map.flags = bind_ops[i].map.flags;
-			if (!job->ops[i].map.bo ||
-			    !job->ops[i].map.va ||
-			    (job->ops[i].map.flags & ~PANCSF_VM_BIND_MAP_FLAGS) != 0 ||
-			    job->ops[i].map.bo_offset >= job->ops[i].map.bo->base.base.size ||
-			    (job->ops[i].map.bo->base.base.size - job->ops[i].map.bo_offset) > job->ops[i].map.size) {
-				ret = -EINVAL;
-				goto err_free_job;
-			}
-
-			break;
-
-		case DRM_PANCSF_BIND_OP_UNMAP:
-			if (!bind_ops[i].unmap.va) {
-				ret = -EINVAL;
-				goto err_free_job;
-			}
-
-			job->ops[i].unmap.va = bind_ops[i].unmap.va;
-			job->ops[i].unmap.size = bind_ops[i].unmap.size;
-			break;
-
-		default:
-			ret = -EINVAL;
-			break;
-		}
-	}
-
-	ret = drm_sched_job_init(&job->base, &queue->sched_entity, queue);
-	if (ret)
-		goto err_free_job;
-
-	job->vm = pancsf_vm_get(vm);
-	job->queue = pancsf_vm_bind_queue_get(queue);
-
-	return job;
-
-err_free_job:
-	if (job) {
-		for (i = 0; i < bind_op_count; i++) {
-			if (job->ops[i].type == DRM_PANCSF_BIND_OP_MAP &&
-			    job->ops[i].map.bo)
-				drm_gem_object_put(&job->ops[i].map.bo->base.base);
-		}
-
-		kvfree(job->ops);
-	}
-	kfree(job);
-	return ERR_PTR(ret);
-}
-
-int pancsf_vm_bind_job_add_dep(struct pancsf_vm_bind_job *job, struct dma_fence *dep)
-{
-	return drm_sched_job_add_dependency(&job->base, dep);
-}
-
-int pancsf_vm_bind_job_push(struct pancsf_vm_bind_job *job)
-{
-	/* TODO: VM resv? */
-	drm_sched_job_arm(&job->base);
-	drm_sched_entity_push_job(&job->base);
-	return 0;
-}
-
-struct dma_fence *pancsf_vm_bind_job_done_fence(struct pancsf_vm_bind_job *job)
-{
-	return dma_fence_get(&job->base.s_fence->finished);
 }
 
 static const char *access_type_name(struct pancsf_device *pfdev,
@@ -1798,13 +1347,6 @@ int pancsf_mmu_init(struct pancsf_device *pfdev)
 	if (ret)
 		goto err_free_mmu;
 
-	/* Bind operations are synchronous for now, no timeout needed. */
-	ret = drm_sched_init(&mmu->vm_bind.sched, &pancsf_vm_bind_ops, 1, 0,
-			     MAX_SCHEDULE_TIMEOUT, NULL, NULL,
-			     "pancsf-vm-bind", pfdev->dev);
-	if (ret)
-		goto err_free_mmu;
-
 	return 0;
 
 err_free_mmu:
@@ -1815,7 +1357,6 @@ err_free_mmu:
 
 void pancsf_mmu_fini(struct pancsf_device *pfdev)
 {
-	drm_sched_fini(&pfdev->mmu->vm_bind.sched);
 	mmu_write(pfdev, MMU_INT_MASK, 0);
 	pfdev->mmu->as.faulty_mask = ~0;
 	synchronize_irq(pfdev->mmu->irq);

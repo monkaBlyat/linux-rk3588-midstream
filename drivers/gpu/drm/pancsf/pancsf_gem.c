@@ -19,7 +19,6 @@ static void pancsf_gem_free_object(struct drm_gem_object *obj)
 {
 	struct pancsf_gem_object *bo = to_pancsf_bo(obj);
 
-	pancsf_vm_put(bo->exclusive_vm);
 	drm_gem_free_mmap_offset(&bo->base.base);
 	drm_gem_shmem_free(&bo->base);
 }
@@ -51,8 +50,6 @@ pancsf_gem_create_and_map(struct pancsf_device *pfdev, struct pancsf_vm *vm,
 		return ERR_PTR(-ENOMEM);
 
 	bo = to_pancsf_bo(&obj->base);
-	bo->exclusive_vm = pancsf_vm_get(vm);
-	bo->base.base.resv = pancsf_vm_resv(vm);
 
 	ret = pancsf_vm_map_bo_range(vm, bo, 0, obj->base.size, gpu_va, vm_map_flags);
 	if (ret) {
@@ -121,9 +118,7 @@ struct drm_gem_object *pancsf_gem_create_object(struct drm_device *ddev, size_t 
 
 struct pancsf_gem_object *
 pancsf_gem_create_with_handle(struct drm_file *file,
-			      struct drm_device *ddev,
-			      struct pancsf_vm *exclusive_vm,
-			      size_t size,
+			      struct drm_device *ddev, size_t size,
 			      u32 flags, u32 *handle)
 {
 	int ret;
@@ -135,11 +130,6 @@ pancsf_gem_create_with_handle(struct drm_file *file,
 		return ERR_CAST(shmem);
 
 	bo = to_pancsf_bo(&shmem->base);
-
-	if (exclusive_vm) {
-		bo->exclusive_vm = pancsf_vm_get(exclusive_vm);
-		bo->base.base.resv = pancsf_vm_resv(exclusive_vm);
-	}
 
 	/*
 	 * Allocate an id of idr table where the obj is registered
@@ -168,22 +158,4 @@ pancsf_gem_prime_import_sg_table(struct drm_device *ddev,
 
 	bo = to_pancsf_bo(obj);
 	return obj;
-}
-
-int pancsf_gem_prime_handle_to_fd(struct drm_device *dev,
-				  struct drm_file *file_priv,
-				  uint32_t handle, uint32_t flags,
-				  int *prime_fd)
-{
-	struct drm_gem_object *obj;
-
-	obj = drm_gem_object_lookup(file_priv, handle);
-	if (!obj)
-		return -ENOENT;
-
-	/* Can't export private BOs. */
-	if (to_pancsf_bo(obj)->exclusive_vm)
-		return -EINVAL;
-
-	return drm_gem_prime_handle_to_fd(dev, file_priv, handle, flags, prime_fd);
 }
