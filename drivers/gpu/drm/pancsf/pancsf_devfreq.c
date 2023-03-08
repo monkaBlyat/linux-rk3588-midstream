@@ -98,7 +98,7 @@ int pancsf_devfreq_init(struct pancsf_device *pfdev)
 		 * continue without devfreq
 		 */
 		DRM_DEV_INFO(dev, "More than 1 supply is not supported yet\n");
-		return 0;
+		//return 0;
 	}
 
 	ret = devm_pm_opp_set_regulators(dev, pfdev->comp->supply_names);
